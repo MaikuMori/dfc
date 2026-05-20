@@ -1,0 +1,37 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/miniscruff/changie/main/docs/schema.json
+
+changesDir: .changes
+unreleasedDir: unreleased
+headerPath: header.tpl.md
+changelogPath: CHANGELOG.md
+versionExt: md
+
+versionFormat: '## [{{.Version}}] - {{.Time.Format "2006-01-02"}}'
+kindFormat: '### {{.Kind}}'
+changeFormat: '- {{.Body}}'
+
+kinds:
+  - label: Added
+    key: added
+    auto: minor
+  - label: Changed
+    key: changed
+    auto: major
+  - label: Deprecated
+    key: deprecated
+    auto: minor
+  - label: Removed
+    key: removed
+    auto: major
+  - label: Fixed
+    key: fixed
+    auto: patch
+  - label: Security
+    key: security
+    auto: patch
+
+newlines:
+  afterChangelogHeader: 1
+  beforeKind: 1
+  afterKind: 1
+  beforeVersion: 1

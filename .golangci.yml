@@ -1,0 +1,121 @@
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - depguard
+    - errorlint
+    - gocritic
+    - misspell
+    - predeclared
+    - revive
+    - rowserrcheck
+    - sqlclosecheck
+    - unconvert
+    - unparam
+    - wastedassign
+
+  settings:
+    depguard:
+      rules:
+        # cmd/dfc is just kong wiring; only cli + ui are reachable from main.
+        cmd-dfc:
+          list-mode: lax
+          files: ["**/cmd/dfc/*.go"]
+          deny:
+            - pkg: "github.com/MaikuMori/dfc/internal/capture"
+              desc: "cmd/dfc routes through cli/ui only"
+            - pkg: "github.com/MaikuMori/dfc/internal/core"
+              desc: "cmd/dfc routes through cli/ui only"
+            - pkg: "github.com/MaikuMori/dfc/internal/index"
+              desc: "cmd/dfc routes through cli/ui only"
+            - pkg: "github.com/MaikuMori/dfc/internal/project"
+              desc: "cmd/dfc routes through cli/ui only"
+            - pkg: "github.com/MaikuMori/dfc/internal/storage"
+              desc: "cmd/dfc routes through cli/ui only"
+            - pkg: "github.com/MaikuMori/dfc/internal/trash"
+              desc: "cmd/dfc routes through cli/ui only"
+            - pkg: "github.com/MaikuMori/dfc/internal/watch"
+              desc: "cmd/dfc routes through cli/ui only"
+
+        # ui sits below cli (cli imports ui, not the other way).
+        # ui mutates via core, so it must not reach into trash directly.
+        ui:
+          list-mode: lax
+          files: ["**/internal/ui/*.go"]
+          deny:
+            - pkg: "github.com/MaikuMori/dfc/internal/cli"
+              desc: "cli imports ui, never the reverse"
+            - pkg: "github.com/MaikuMori/dfc/internal/trash"
+              desc: "ui mutates the trash via core, not directly"
+
+        # core is the transactional facade; nothing UI/CLI-shaped allowed.
+        core:
+          list-mode: lax
+          files: ["**/internal/core/*.go"]
+          deny:
+            - pkg: "github.com/MaikuMori/dfc/internal/cli"
+              desc: "core is below cli"
+            - pkg: "github.com/MaikuMori/dfc/internal/ui"
+              desc: "core is below ui"
+            - pkg: "github.com/MaikuMori/dfc/internal/watch"
+              desc: "watch is a ui concern; core doesn't react to fs events"
+
+        # storage is a leaf: only project (for Slugify) is allowed.
+        storage:
+          list-mode: lax
+          files: ["**/internal/storage/*.go"]
+          deny:
+            - pkg: "github.com/MaikuMori/dfc/internal/cli"
+            - pkg: "github.com/MaikuMori/dfc/internal/ui"
+            - pkg: "github.com/MaikuMori/dfc/internal/core"
+            - pkg: "github.com/MaikuMori/dfc/internal/capture"
+            - pkg: "github.com/MaikuMori/dfc/internal/index"
+            - pkg: "github.com/MaikuMori/dfc/internal/trash"
+            - pkg: "github.com/MaikuMori/dfc/internal/watch"
+
+        # capture / index / trash all depend only on storage (the Task type).
+        storage-only:
+          list-mode: lax
+          files:
+            - "**/internal/capture/*.go"
+            - "**/internal/index/*.go"
+            - "**/internal/trash/*.go"
+          deny:
+            - pkg: "github.com/MaikuMori/dfc/internal/cli"
+            - pkg: "github.com/MaikuMori/dfc/internal/ui"
+            - pkg: "github.com/MaikuMori/dfc/internal/core"
+            - pkg: "github.com/MaikuMori/dfc/internal/capture"
+            - pkg: "github.com/MaikuMori/dfc/internal/index"
+            - pkg: "github.com/MaikuMori/dfc/internal/project"
+            - pkg: "github.com/MaikuMori/dfc/internal/trash"
+            - pkg: "github.com/MaikuMori/dfc/internal/watch"
+
+        # project and watch are pure leaves — no other internal imports.
+        leaves:
+          list-mode: lax
+          files:
+            - "**/internal/project/*.go"
+            - "**/internal/watch/*.go"
+          deny:
+            - pkg: "github.com/MaikuMori/dfc/internal/cli"
+            - pkg: "github.com/MaikuMori/dfc/internal/ui"
+            - pkg: "github.com/MaikuMori/dfc/internal/core"
+            - pkg: "github.com/MaikuMori/dfc/internal/capture"
+            - pkg: "github.com/MaikuMori/dfc/internal/index"
+            - pkg: "github.com/MaikuMori/dfc/internal/storage"
+            - pkg: "github.com/MaikuMori/dfc/internal/trash"
+
+    gocritic:
+      enabled-checks:
+        - appendCombine
+
+    misspell:
+      locale: US
+
+    revive:
+      rules:
+        - name: var-naming
+        - name: early-return
+        - name: unused-parameter
+        - name: redefines-builtin-id

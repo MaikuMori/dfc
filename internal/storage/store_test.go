@@ -1,0 +1,266 @@
+package storage
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+)
+
+func TestStoreCRUD(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(EnvRoot, root)
+
+	s, err := Open("test-project")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now().UTC().Truncate(time.Second)
+	t1, err := s.Create(Task{
+		ID: "01AAA", Status: StatusOpen, Created: now,
+		Description: "first",
+	}, "01aaa-first")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t2, err := s.Create(Task{
+		ID: "01BBB", Status: StatusOpen, Created: now.Add(time.Second),
+		Description: "second", Details: "with notes",
+	}, "01bbb-second")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	list, err := s.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 2 {
+		t.Fatalf("list len = %d, want 2", len(list))
+	}
+	if list[0].ID != "01AAA" || list[1].ID != "01BBB" {
+		t.Errorf("wrong order: %+v", list)
+	}
+
+	// Toggle t1 to done and re-save.
+	t1.Status = StatusDone
+	if err := s.Save(&t1); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := s.Load(t1.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Status != StatusDone {
+		t.Errorf("status = %s, want done", loaded.Status)
+	}
+	if loaded.Description != "first" {
+		t.Errorf("description lost on save: %q", loaded.Description)
+	}
+
+	// Delete t2.
+	if err := s.Delete(t2.Path); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(t2.Path); !os.IsNotExist(err) {
+		t.Errorf("file should be gone: err=%v", err)
+	}
+
+	list, err = s.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("after delete len = %d, want 1", len(list))
+	}
+}
+
+func TestStoreList_SortsByMtime(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(EnvRoot, root)
+
+	s, err := Open("proj")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	a, err := s.Create(Task{ID: "A", Status: StatusOpen, Created: time.Now()}, "ts1-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Sleep just past mtime resolution worst-case so Save bumps clearly.
+	time.Sleep(20 * time.Millisecond)
+	_, err = s.Create(Task{ID: "B", Status: StatusOpen, Created: time.Now()}, "ts2-b")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	list, err := s.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list[0].ID != "A" || list[1].ID != "B" {
+		t.Fatalf("initial order: %s,%s want A,B", list[0].ID, list[1].ID)
+	}
+
+	// Re-save A → its mtime should jump past B.
+	time.Sleep(20 * time.Millisecond)
+	if err := s.Save(&a); err != nil {
+		t.Fatal(err)
+	}
+	list, err = s.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list[0].ID != "B" || list[1].ID != "A" {
+		t.Fatalf("after re-save: %s,%s want B,A (modified=%v,%v)",
+			list[0].ID, list[1].ID, list[0].Modified, list[1].Modified)
+	}
+}
+
+func TestRenameForDescription(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(EnvRoot, root)
+
+	s, err := Open("proj")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now().UTC().Truncate(time.Second)
+	task, err := s.Create(Task{
+		ID: "01CCCCCCCC", Status: StatusOpen, Created: now,
+		Description: "buy milk",
+		Details:     "from the corner store",
+	}, "01cccccccc-buy-milk")
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldPath := task.Path
+
+	if err := s.RenameForDescription(&task, "buy cheese"); err != nil {
+		t.Fatal(err)
+	}
+	if task.Description != "buy cheese" {
+		t.Errorf("description not updated in struct: %q", task.Description)
+	}
+	if task.Path == oldPath {
+		t.Errorf("path unchanged: %q", task.Path)
+	}
+	if _, err := os.Stat(oldPath); !os.IsNotExist(err) {
+		t.Errorf("old file should be gone: err=%v", err)
+	}
+	if filepath.Base(task.Path) != "01cccccccc-buy-cheese.md" {
+		t.Errorf("new filename = %q", filepath.Base(task.Path))
+	}
+
+	// Re-load and check details survived the rename.
+	loaded, err := s.Load(task.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Description != "buy cheese" {
+		t.Errorf("description lost: %q", loaded.Description)
+	}
+	if loaded.Details != "from the corner store" {
+		t.Errorf("details lost: %q", loaded.Details)
+	}
+
+	// No-op rename (same description).
+	before := task.Path
+	if err := s.RenameForDescription(&task, "buy cheese"); err != nil {
+		t.Fatal(err)
+	}
+	if task.Path != before {
+		t.Errorf("expected no rename, path changed: %q -> %q", before, task.Path)
+	}
+}
+
+func TestFindByID(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(EnvRoot, root)
+	s, err := Open("proj")
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := "01ABCDEFGH123456789012345A"
+	task, err := s.Create(Task{ID: id, Status: StatusOpen, Created: time.Now(), Description: "x"}, "01abcdefgh-x")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := s.FindByID(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != task.Path {
+		t.Errorf("FindByID = %q, want %q", got, task.Path)
+	}
+
+	miss, err := s.FindByID("01ZZZZZZZZ00000000000000ZZ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if miss != "" {
+		t.Errorf("expected miss, got %q", miss)
+	}
+}
+
+func TestStoreTagsProjectSlug(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(EnvRoot, root)
+
+	s, err := Open("acme")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	task, err := s.Create(Task{
+		ID: "01TAGTEST00000000000000000", Status: StatusOpen, Created: now,
+		Description: "tag me",
+	}, "01tagtest00-tag-me")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task.ProjectSlug != "acme" {
+		t.Errorf("Create: ProjectSlug = %q, want %q", task.ProjectSlug, "acme")
+	}
+
+	// Save round-trip: clear and re-set via Save.
+	task.ProjectSlug = ""
+	if err := s.Save(&task); err != nil {
+		t.Fatal(err)
+	}
+	if task.ProjectSlug != "acme" {
+		t.Errorf("Save: ProjectSlug = %q, want %q", task.ProjectSlug, "acme")
+	}
+
+	loaded, err := s.Load(task.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.ProjectSlug != "acme" {
+		t.Errorf("Load: ProjectSlug = %q, want %q", loaded.ProjectSlug, "acme")
+	}
+
+	if err := s.RenameForDescription(&loaded, "renamed me"); err != nil {
+		t.Fatal(err)
+	}
+	if loaded.ProjectSlug != "acme" {
+		t.Errorf("RenameForDescription: ProjectSlug = %q, want %q", loaded.ProjectSlug, "acme")
+	}
+}
+
+func TestStoreDir(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(EnvRoot, root)
+	s, err := Open("acme")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(root, "projects", "acme")
+	if s.Dir() != want {
+		t.Errorf("dir = %q, want %q", s.Dir(), want)
+	}
+}
