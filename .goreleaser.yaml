@@ -1,0 +1,91 @@
+version: 2
+
+project_name: dfc
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: dfc
+    main: ./cmd/dfc
+    binary: dfc
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/MaikuMori/dfc/internal/cli.Version={{ .Version }}
+      - -X github.com/MaikuMori/dfc/internal/cli.Commit={{ .Commit }}
+      - -X github.com/MaikuMori/dfc/internal/cli.Date={{ .CommitDate }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: default
+    formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- .Arch }}
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - LICENSE
+      - README.md
+      - CHANGELOG.md
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: "{{ .Version }}-unreleased+{{ .ShortCommit }}"
+
+changelog:
+  disable: true
+
+nfpms:
+  - id: dfc
+    package_name: dfc
+    vendor: Miks Kalnins
+    homepage: https://github.com/MaikuMori/dfc
+    maintainer: Miks Kalnins <mikskalnins@maikumori.com>
+    description: Quick-capture task CLI and TUI. Markdown files on disk are the source of truth.
+    license: MIT
+    formats:
+      - deb
+      - rpm
+      - apk
+    section: utils
+
+sboms:
+  - id: default
+    artifacts: archive
+    documents:
+      - "${artifact}.sbom.spdx.json"
+
+signs:
+  - id: default
+    cmd: cosign
+    signature: "${artifact}.bundle"
+    args:
+      - sign-blob
+      - --bundle=${signature}
+      - ${artifact}
+      - --yes
+    artifacts: all
+    output: true
+
+release:
+  draft: true
+  prerelease: auto
+  github:
+    owner: MaikuMori
+    name: dfc

@@ -1,0 +1,26 @@
+# Per-user agent notes
+CLAUDE.md
+AGENTS.md
+
+# Build artifacts
+/dfc
+*.exe
+/dist/
+
+# Go test / coverage artifacts
+*.test
+*.out
+coverage.txt
+coverage.html
+
+# Editors / IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+*.tmp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
