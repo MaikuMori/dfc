@@ -1,0 +1,126 @@
+name: Prepare release PR
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: prepare-release
+  cancel-in-progress: true
+
+jobs:
+  prepare:
+    if: github.repository == 'MaikuMori/dfc'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (v6.0.2 hits "Duplicate header: Authorization")
+        with:
+          fetch-depth: 0
+
+      - name: Check for unreleased changesets
+        id: check
+        run: |
+          if find .changes/unreleased -name '*.yaml' -print -quit 2>/dev/null | grep -q .; then
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            echo "No unreleased changesets; nothing to prepare."
+          fi
+
+      - name: Guard — refuse to force-push if release/next has non-bot commits
+        if: steps.check.outputs.has_changes == 'true'
+        env:
+          BOT_EMAIL: '41898282+github-actions[bot]@users.noreply.github.com'
+        run: |
+          git fetch origin release/next 2>/dev/null || true
+          if ! git rev-parse --verify origin/release/next >/dev/null 2>&1; then
+            echo "release/next does not exist on origin yet; nothing to guard."
+            exit 0
+          fi
+          NONBOT=$(git log master..origin/release/next --pretty=format:'%H %an <%ae>' \
+                   | grep -v "<${BOT_EMAIL}>" || true)
+          if [ -n "$NONBOT" ]; then
+            {
+              echo "::error::Refusing to force-push release/next — found commits not authored by github-actions[bot]:"
+              echo "$NONBOT" | sed 's/^/::error::  /'
+              echo "::error::Resolve by rebasing or deleting release/next before re-running."
+            }
+            exit 1
+          fi
+          echo "release/next is bot-only; safe to force-push."
+
+      - name: Compute next version
+        if: steps.check.outputs.has_changes == 'true'
+        id: changie-next
+        uses: miniscruff/changie-action@11bcad388e7973948cbcecb10863baf024d5f607  # v3
+        with:
+          version: latest
+          args: next auto
+
+      - name: Reset release/next branch from master
+        if: steps.check.outputs.has_changes == 'true'
+        run: |
+          git config user.name  'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git checkout -B release/next
+
+      - name: Batch unreleased changesets into the next version
+        if: steps.check.outputs.has_changes == 'true'
+        uses: miniscruff/changie-action@11bcad388e7973948cbcecb10863baf024d5f607  # v3
+        with:
+          version: latest
+          args: batch ${{ steps.changie-next.outputs.output }}
+
+      - name: Merge CHANGELOG.md
+        if: steps.check.outputs.has_changes == 'true'
+        uses: miniscruff/changie-action@11bcad388e7973948cbcecb10863baf024d5f607  # v3
+        with:
+          version: latest
+          args: merge
+
+      - name: Commit + force-push release branch
+        if: steps.check.outputs.has_changes == 'true'
+        env:
+          NEXT: ${{ steps.changie-next.outputs.output }}
+        run: |
+          git add CHANGELOG.md .changes/
+          git commit -m "chore: prepare release ${NEXT}"
+          git push --force origin release/next
+
+      - name: Create or update release PR
+        if: steps.check.outputs.has_changes == 'true'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
+        env:
+          NEXT: ${{ steps.changie-next.outputs.output }}
+        with:
+          script: |
+            const fs = require('fs');
+            const { owner, repo } = context.repo;
+            const next = process.env.NEXT;
+            const head = 'release/next';
+            const base = context.payload.repository.default_branch;
+            const notes = fs.readFileSync(`.changes/${next}.md`, 'utf8');
+            const title = `release: ${next}`;
+            const body = [
+              `## ${next}`,
+              '',
+              notes,
+              '',
+              `_This PR is maintained automatically by \`prepare-release.yml\`. As more changesets land on \`${base}\`, this PR's title, body, and diff refresh. Merging brings the updated \`CHANGELOG.md\` and the consumed \`.changes/unreleased/\` entries back to \`${base}\`. Cut the matching tag (\`git tag ${next} && git push --tags\`) to trigger the GoReleaser pipeline._`,
+            ].join('\n');
+
+            const list = await github.rest.pulls.list({
+              owner, repo, head: `${owner}:${head}`, state: 'open',
+            });
+            if (list.data.length === 0) {
+              await github.rest.pulls.create({ owner, repo, head, base, title, body });
+            } else {
+              await github.rest.pulls.update({
+                owner, repo, pull_number: list.data[0].number, title, body,
+              });
+            }
