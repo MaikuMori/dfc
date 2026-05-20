@@ -6,3 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 Release notes are managed via [changie](https://changie.dev). Add an entry with `changie new` rather than editing this file by hand; the file is regenerated on release.
 
+
+## [v0.1.0] - 2026-05-20
+
+### Added
+
+- Initial version
