@@ -84,7 +84,6 @@ signs:
     output: true
 
 release:
-  draft: true
   prerelease: auto
   github:
     owner: MaikuMori

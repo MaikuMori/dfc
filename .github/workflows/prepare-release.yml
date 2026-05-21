@@ -89,7 +89,7 @@ jobs:
               '',
               notes,
               '',
-              `_Maintained automatically by \`prepare-release.yml\`; refreshes as more changesets land on \`${base}\`. **Merging tags \`${next}\` and kicks off the release pipeline** — archives, signed artifacts, SBOMs, SLSA provenance, and the GitHub release all land automatically._`,
+              `_Maintained automatically by \`prepare-release.yml\`; refreshes as more changesets land on \`${base}\`. **Merging tags \`${next}\` and kicks off the release pipeline** — archives, signed artifacts, SBOMs, and the GitHub release all land automatically._`,
             ].join('\n');
 
             const list = await github.rest.pulls.list({

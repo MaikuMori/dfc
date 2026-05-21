@@ -10,7 +10,7 @@ on:
 permissions:
   contents: write
   packages: write
-  id-token: write
+  id-token: write  # cosign keyless signing
 
 concurrency:
   group: release
@@ -24,9 +24,6 @@ jobs:
         (github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'release/next')
       )
     runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.version.outputs.version }}
-      hashes: ${{ steps.checksums.outputs.hashes }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
@@ -81,21 +78,3 @@ jobs:
           args: release --clean --release-notes=.changes/${{ steps.version.outputs.version }}.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Export artifact hashes for SLSA provenance
-        id: checksums
-        run: |
-          HASHES=$(base64 -w0 < dist/checksums.txt)
-          echo "hashes=${HASHES}" >> "$GITHUB_OUTPUT"
-
-  provenance:
-    needs: release
-    permissions:
-      actions: read
-      id-token: write
-      contents: write
-    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0
-    with:
-      base64-subjects: ${{ needs.release.outputs.hashes }}
-      upload-assets: true
-      upload-tag-name: ${{ needs.release.outputs.version }}
