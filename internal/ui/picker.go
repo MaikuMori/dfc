@@ -442,6 +442,10 @@ type pickerProgram struct{ p Picker }
 
 func (pp pickerProgram) Init() tea.Cmd { return pp.p.Init() }
 func (pp pickerProgram) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if sz, ok := msg.(tea.WindowSizeMsg); ok {
+		pp.p.SetWidth(sz.Width)
+		return pp, nil
+	}
 	var cmd tea.Cmd
 	pp.p, cmd = pp.p.Update(msg)
 	if pp.p.done {

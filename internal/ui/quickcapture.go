@@ -22,6 +22,15 @@ type quickCaptureModel struct {
 func (m quickCaptureModel) Init() tea.Cmd { return textarea.Blink }
 
 func (m quickCaptureModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if sz, ok := msg.(tea.WindowSizeMsg); ok {
+		w := sz.Width - 2 // textarea prompt ("> "/"  ") + cursor breathing room
+		if w < 1 {
+			w = 1
+		}
+		m.input.SetWidth(w)
+		resizeQuickCapture(&m.input)
+		return m, nil
+	}
 	if k, ok := msg.(tea.KeyPressMsg); ok {
 		// Plain (unmodified) Enter submits. Any modifier (alt/shift/ctrl)
 		// falls through so the textarea's rebound InsertNewline binding
