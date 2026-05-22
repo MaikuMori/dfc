@@ -1,3 +1,0 @@
-kind: added
-body: "TUI: 'f' opens a multi-select tag filter in global view (header count updates live, selection is session-only). 'P → ctrl+t' opens a multi-select tag editor; 'ctrl+n' adds a new tag, 'ctrl+l' clears. Returns to the project switcher on save/cancel."
-time: 2026-05-22T17:03:59.800486-04:00

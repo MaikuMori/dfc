@@ -1,3 +1,0 @@
-kind: fixed
-body: '''dfc cc'' picker and the inline prompt (used by ''dfc c'' with no description) now resize to fit the terminal. They previously sat at 40 columns regardless of window width.'
-time: 2026-05-22T15:49:59.421883-04:00

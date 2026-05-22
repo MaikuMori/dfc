@@ -1,3 +1,0 @@
-kind: added
-body: 'TUI: ''s'' cycles the list sort between modified (file mtime) and created (frontmatter timestamp). Session-only; resets to modified on next launch. ''dfc ls'' and ''dfc s/ss'' grow a ''--sort modified|created'' flag (search also keeps the existing ''score'' default).'
-time: 2026-05-22T15:28:50.989446-04:00
