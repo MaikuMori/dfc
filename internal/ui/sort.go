@@ -2,15 +2,43 @@ package ui
 
 import (
 	"sort"
+	"time"
 
 	"github.com/MaikuMori/dfc/internal/project"
 	"github.com/MaikuMori/dfc/internal/storage"
 )
 
+// sortKey selects which timestamp drives within-zone ordering.
+//
+//   - sortByModified: filesystem mtime — picks up external edits.
+//   - sortByCreated:  frontmatter `created` — capture-order stable.
+type sortKey int
+
+const (
+	sortByModified sortKey = iota
+	sortByCreated
+)
+
+// String returns the lowercase label used in transient status hints.
+func (k sortKey) String() string {
+	if k == sortByCreated {
+		return "created"
+	}
+	return "modified"
+}
+
+// next returns the next key in the cycle.
+func (k sortKey) next() sortKey {
+	if k == sortByModified {
+		return sortByCreated
+	}
+	return sortByModified
+}
+
 // sortDoneFirst returns a new slice with done tasks at the top and open tasks
-// below, each zone sorted by filesystem modification time ascending (most
-// recently touched lands at the bottom of its zone).
-func sortDoneFirst(tasks []storage.Task) []storage.Task {
+// below, each zone sorted by the chosen timestamp ascending (newest lands at
+// the bottom of its zone, flush against the input).
+func sortDoneFirst(tasks []storage.Task, key sortKey) []storage.Task {
 	out := make([]storage.Task, len(tasks))
 	copy(out, tasks)
 	sort.SliceStable(out, func(i, j int) bool {
@@ -19,9 +47,17 @@ func sortDoneFirst(tasks []storage.Task) []storage.Task {
 		if di != dj {
 			return di // done zone before open zone
 		}
-		return out[i].Modified.Before(out[j].Modified)
+		return timeForKey(out[i], key).Before(timeForKey(out[j], key))
 	})
 	return out
+}
+
+// timeForKey returns the timestamp used to order t under the chosen key.
+func timeForKey(t storage.Task, key sortKey) time.Time {
+	if key == sortByCreated {
+		return t.Created
+	}
+	return t.Modified
 }
 
 // indexByID returns the index of the task with the given id, or -1.

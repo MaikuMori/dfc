@@ -18,7 +18,7 @@ func TestSortDoneFirst(t *testing.T) {
 		mk("d", storage.StatusOpen, 3*time.Second),
 		mk("b", storage.StatusDone, time.Second),
 	}
-	out := sortDoneFirst(in)
+	out := sortDoneFirst(in, sortByModified)
 
 	wantOrder := []string{"a", "b", "c", "d"}
 	for i, id := range wantOrder {
@@ -34,9 +34,36 @@ func TestSortDoneFirst_AllOpen(t *testing.T) {
 		{ID: "y", Status: storage.StatusOpen, Modified: base.Add(time.Second)},
 		{ID: "x", Status: storage.StatusOpen, Modified: base},
 	}
-	out := sortDoneFirst(in)
+	out := sortDoneFirst(in, sortByModified)
 	if out[0].ID != "x" || out[1].ID != "y" {
 		t.Errorf("ordering wrong: %+v", out)
+	}
+}
+
+func TestSortDoneFirst_ByCreated(t *testing.T) {
+	base := time.Date(2026, 5, 13, 12, 0, 0, 0, time.UTC)
+	// Diverge created vs modified intentionally so the two keys produce
+	// different orderings.
+	in := []storage.Task{
+		{ID: "y", Status: storage.StatusOpen, Created: base.Add(2 * time.Second), Modified: base},
+		{ID: "x", Status: storage.StatusOpen, Created: base, Modified: base.Add(2 * time.Second)},
+	}
+	out := sortDoneFirst(in, sortByCreated)
+	if out[0].ID != "x" || out[1].ID != "y" {
+		t.Errorf("sortByCreated ordering wrong: %+v", out)
+	}
+	out = sortDoneFirst(in, sortByModified)
+	if out[0].ID != "y" || out[1].ID != "x" {
+		t.Errorf("sortByModified should disagree with created here: %+v", out)
+	}
+}
+
+func TestSortKeyCycleAndLabel(t *testing.T) {
+	if (sortByModified).String() != "modified" || (sortByCreated).String() != "created" {
+		t.Errorf("labels: %q / %q", sortByModified, sortByCreated)
+	}
+	if (sortByModified).next() != sortByCreated || (sortByCreated).next() != sortByModified {
+		t.Errorf("cycle should toggle: %v %v", sortByModified.next(), sortByCreated.next())
 	}
 }
 

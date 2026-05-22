@@ -57,6 +57,7 @@ type Model struct {
 	capTargetSlug string // set transiently when capturing into a picker-chosen project; "" = current store
 	lastBody      string // last body string handed to viewport.SetContent — used to skip redundant re-splits
 	searchQuery   string // active filter; "" = no filter
+	sortKey       sortKey
 }
 
 // New constructs a Model bound to the given Core, project slug, store
@@ -73,7 +74,7 @@ func New(cr *core.Core, slug string, store *storage.Store, initial []storage.Tas
 	tiStyles.Blurred.Prompt = stylePrompt
 	ti.SetStyles(tiStyles)
 
-	tasks := sortDoneFirst(initial)
+	tasks := sortDoneFirst(initial, sortByModified)
 	cursor := 0
 	if len(tasks) > 0 {
 		// Default cursor to the newest task so the eye lands where new ones

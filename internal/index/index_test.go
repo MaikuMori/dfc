@@ -300,6 +300,26 @@ func TestSortByModified(t *testing.T) {
 	}
 }
 
+// TestSortByCreated covers the "created" branch of the SortBy switch.
+// Created and Modified are intentionally opposite so the test would fail
+// if the SQL fell through to the modified path.
+func TestSortByCreated(t *testing.T) {
+	idx := openTempIndex(t)
+	old := mkTask("OLD_CREATED", "milk", "")
+	old.Created = time.Unix(1_700_000_000, 0)
+	old.Modified = time.Unix(1_900_000_000, 0) // newer mtime — must be ignored
+	fresh := mkTask("FRESH_CREATED", "milk", "")
+	fresh.Created = time.Unix(1_800_000_000, 0)
+	fresh.Modified = time.Unix(1_700_000_000, 0) // older mtime — must be ignored
+	_ = idx.Upsert(old)
+	_ = idx.Upsert(fresh)
+
+	hits, _ := idx.Search("milk", SearchOpts{SortBy: "created"})
+	if len(hits) != 2 || hits[0].Task.ID != "FRESH_CREATED" {
+		t.Errorf("created order: %+v", hits)
+	}
+}
+
 func TestPersistenceRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv(storage.EnvRoot, dir)

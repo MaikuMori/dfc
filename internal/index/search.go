@@ -17,7 +17,7 @@ type SearchOpts struct {
 	Project string // restrict to one slug; "" = any
 	Status  string // "open" | "done" | "" (any)
 	Limit   int    // 0 → defaultLimit
-	SortBy  string // "score" (default) | "modified"
+	SortBy  string // "score" (default) | "modified" | "created"
 }
 
 // SearchHit is one returned match. Task carries the same shape as
@@ -49,11 +49,14 @@ func (i *Index) Search(q string, opts SearchOpts) ([]SearchHit, error) {
 	}
 
 	// We rely on rank (BM25, lower is better in FTS5 → we ORDER BY rank
-	// ascending) by default, falling back to mtime when the caller asks
-	// for recency.
+	// ascending) by default, falling back to a timestamp when the caller
+	// asks for recency.
 	orderBy := `rank`
-	if opts.SortBy == "modified" {
+	switch opts.SortBy {
+	case "modified":
 		orderBy = `tasks_meta.modified DESC`
+	case "created":
+		orderBy = `tasks_meta.created DESC`
 	}
 
 	// Build the WHERE clause and matching positional args together. Bind

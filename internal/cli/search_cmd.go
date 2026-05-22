@@ -22,7 +22,7 @@ type SearchCmd struct {
 	All     bool     `name:"all" short:"a" help:"Search every project, not just the current one."`
 	Status  string   `name:"status" enum:"open,done,all" default:"all" help:"Filter by status."`
 	Limit   int      `name:"limit" short:"n" default:"20" help:"Maximum hits to return."`
-	Sort    string   `name:"sort" enum:"score,modified" default:"score" help:"Order results by score or recency."`
+	Sort    string   `name:"sort" enum:"score,modified,created" default:"score" help:"Order results by score, modification time, or creation time."`
 	JSON    bool     `name:"json" help:"Emit one SearchHit JSON object per line."`
 	Reindex bool     `name:"reindex" help:"Drop and rebuild the index from disk before searching."`
 	Query   []string `arg:"" optional:"" help:"Query string (joined with spaces)."`
@@ -34,7 +34,7 @@ type SsCmd struct {
 	Project string   `name:"project" short:"p" predictor:"project" help:"Restrict to this project slug."`
 	Status  string   `name:"status" enum:"open,done,all" default:"all" help:"Filter by status."`
 	Limit   int      `name:"limit" short:"n" default:"20" help:"Maximum hits to return."`
-	Sort    string   `name:"sort" enum:"score,modified" default:"score" help:"Order results by score or recency."`
+	Sort    string   `name:"sort" enum:"score,modified,created" default:"score" help:"Order results by score, modification time, or creation time."`
 	JSON    bool     `name:"json" help:"Emit one SearchHit JSON object per line."`
 	Reindex bool     `name:"reindex" help:"Drop and rebuild the index from disk before searching."`
 	Query   []string `arg:"" optional:"" help:"Query string (joined with spaces)."`

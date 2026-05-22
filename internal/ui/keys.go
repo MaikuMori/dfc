@@ -25,6 +25,7 @@ type keyMap struct {
 	SearchCommit     key.Binding
 	SearchClear      key.Binding
 	Switch           key.Binding
+	Sort             key.Binding
 	PickerRename     key.Binding
 	PickerSetTag     key.Binding
 	PickerDelete     key.Binding
@@ -57,6 +58,7 @@ var keys = keyMap{
 	SearchClear:  key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "clear")),
 
 	Switch:       key.NewBinding(key.WithKeys("P"), key.WithHelp("P", "switch")),
+	Sort:         key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "sort: modified/created")),
 	PickerRename: key.NewBinding(key.WithKeys("ctrl+r"), key.WithHelp("^r", "rename")),
 	PickerSetTag: key.NewBinding(key.WithKeys("ctrl+t"), key.WithHelp("^t", "set tag")),
 	PickerDelete: key.NewBinding(key.WithKeys("ctrl+shift+d"), key.WithHelp("^⇧d", "delete project")),
@@ -81,7 +83,7 @@ func (k keyMap) FullHelp() [][]key.Binding {
 		{k.Up, k.Down, k.PageUp, k.PageDn, k.Top, k.Bottom, k.Expand},
 		{k.Capture, k.NewlineInCapture, k.Edit, k.EditExt, k.Toggle, k.Delete, k.Undo},
 		{k.Search, k.SearchCommit, k.SearchClear},
-		{k.Switch, k.PickerRename, k.PickerSetTag, k.PickerDelete, k.Global},
+		{k.Switch, k.PickerRename, k.PickerSetTag, k.PickerDelete, k.Global, k.Sort},
 		{k.Help, k.Quit},
 	}
 }

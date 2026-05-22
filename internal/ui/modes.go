@@ -94,7 +94,7 @@ func (m *Model) switchTo(slug string) (tea.Cmd, error) {
 	}
 	m.slug = slug
 	m.store = store
-	m.tasks = sortDoneFirst(tasks)
+	m.tasks = sortDoneFirst(tasks, m.sortKey)
 	m.cursor = 0
 	if len(m.tasks) > 0 {
 		m.cursor = len(m.tasks) - 1
@@ -153,7 +153,7 @@ func (m Model) updateList(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.err = nil
-		m.tasks = sortDoneFirst(replaceByID(m.tasks, t))
+		m.tasks = sortDoneFirst(replaceByID(m.tasks, t), m.sortKey)
 		if prev >= len(m.tasks) {
 			prev = len(m.tasks) - 1
 		}
@@ -165,6 +165,24 @@ func (m Model) updateList(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if m.searchQuery != "" {
 			m = m.runSearch()
 		}
+
+	case key.Matches(msg, keys.Sort):
+		m.sortKey = m.sortKey.next()
+		// Re-sort in place, keeping the cursor on the same task by ID so
+		// the user's eye doesn't lose its place when the order flips.
+		var currentID, currentSlug string
+		if m.cursor < len(m.tasks) {
+			currentID = m.tasks[m.cursor].ID
+			currentSlug = m.tasks[m.cursor].ProjectSlug
+		}
+		m.tasks = sortDoneFirst(m.tasks, m.sortKey)
+		if currentID != "" {
+			if i := indexByIDSlug(m.tasks, currentID, currentSlug, m.globalView); i >= 0 {
+				m.cursor = i
+			}
+		}
+		m.followCursor()
+		m.status = "sort: " + m.sortKey.String()
 
 	case key.Matches(msg, keys.Capture):
 		if m.globalView {
@@ -457,7 +475,7 @@ func (m *Model) commitCapture(desc, details string) error {
 	if err != nil {
 		return err
 	}
-	m.tasks = sortDoneFirst(append(m.tasks, res.Task))
+	m.tasks = sortDoneFirst(append(m.tasks, res.Task), m.sortKey)
 	if i := indexByIDSlug(m.tasks, res.Task.ID, res.Task.ProjectSlug, m.globalView); i >= 0 {
 		m.cursor = i
 	}

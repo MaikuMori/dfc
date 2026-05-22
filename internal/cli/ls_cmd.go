@@ -18,6 +18,7 @@ type LsCmd struct {
 	Project string `name:"project" short:"p" predictor:"project" help:"List tasks for this project slug (defaults to cwd)."`
 	All     bool   `name:"all" short:"a" help:"List tasks from every registered project."`
 	Status  string `name:"status" enum:"open,done,all" default:"all" help:"Filter by status."`
+	Sort    string `name:"sort" enum:"modified,created" default:"modified" help:"Order by modification time or creation time."`
 	JSON    bool   `name:"json" help:"Emit one JSON object per line (NDJSON)."`
 }
 
@@ -80,8 +81,12 @@ func (c *LsCmd) Run() error {
 		tasks = filtered
 	}
 
-	// Newest-modified first. Stable so equal mtimes preserve relative order.
+	// Newest first by the chosen timestamp. Stable so equal stamps preserve
+	// relative order.
 	sort.SliceStable(tasks, func(i, j int) bool {
+		if c.Sort == "created" {
+			return tasks[i].Created.After(tasks[j].Created)
+		}
 		return tasks[i].Modified.After(tasks[j].Modified)
 	})
 

@@ -166,7 +166,7 @@ func (m Model) applyTaskListPreservingCursor(tasks []storage.Task) Model {
 		currentID = m.tasks[m.cursor].ID
 		currentSlug = m.tasks[m.cursor].ProjectSlug
 	}
-	m.tasks = sortDoneFirst(tasks)
+	m.tasks = sortDoneFirst(tasks, m.sortKey)
 	m.cursor = 0
 	if currentID != "" {
 		if i := indexByIDSlug(m.tasks, currentID, currentSlug, m.globalView); i >= 0 {
