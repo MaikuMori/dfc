@@ -146,7 +146,7 @@ func TestRmCmd_RemovesTask(t *testing.T) {
 	setupDFCRoot(t)
 	saved := captureFirst(t, "doomed task")
 
-	cmd := &RmCmd{ID: saved.ID}
+	cmd := &RmCmd{ID: saved.ID, AllProjects: true}
 	_, err := captureStdout(t, cmd.Run)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -162,7 +162,7 @@ func TestRmCmd_RemovesTask(t *testing.T) {
 
 func TestRmCmd_UnknownID(t *testing.T) {
 	setupDFCRoot(t)
-	cmd := &RmCmd{ID: "01J9X7K3M8VQNH4Z7Y3PG2T5BD"}
+	cmd := &RmCmd{ID: "01J9X7K3M8VQNH4Z7Y3PG2T5BD", AllProjects: true}
 	_, err := captureStdout(t, cmd.Run)
 	if err == nil {
 		t.Fatal("expected error for unknown id")
@@ -174,7 +174,7 @@ func TestRmCmd_UnknownID(t *testing.T) {
 
 func TestRmCmd_BadIDLength(t *testing.T) {
 	setupDFCRoot(t)
-	cmd := &RmCmd{ID: "not-a-ulid"}
+	cmd := &RmCmd{ID: "not-a-ulid", AllProjects: true}
 	_, err := captureStdout(t, cmd.Run)
 	if err == nil {
 		t.Fatal("expected error for invalid id")
@@ -259,6 +259,218 @@ func TestLsCmd_AllAndProjectMutuallyExclusive(t *testing.T) {
 	_, err := captureStdout(t, cmd.Run)
 	if err == nil {
 		t.Fatal("expected error for --all + --project")
+	}
+}
+
+// captureInCwdProject puts a task into whatever slug project.Resolve
+// returns for the current working directory. Use this in tests that
+// exercise the cwd-default ID lookup on done/edit/rm/show/reopen.
+func captureInCwdProject(t *testing.T, desc string) (slug string, task storage.Task) {
+	t.Helper()
+	slug, err := resolveCwdSlug()
+	if err != nil {
+		t.Fatalf("resolveCwdSlug: %v", err)
+	}
+	cr, err := core.Open(core.Options{Warn: func(string, error) {}})
+	if err != nil {
+		t.Fatalf("core.Open: %v", err)
+	}
+	defer func() { _ = cr.Close() }()
+	res, err := cr.Capture(core.CaptureInput{Slug: slug, Description: desc, DisplayName: slug})
+	if err != nil {
+		t.Fatalf("Capture: %v", err)
+	}
+	return slug, res.Task
+}
+
+func TestDoneCmd_CwdDefault(t *testing.T) {
+	setupDFCRoot(t)
+	_, task := captureInCwdProject(t, "in cwd")
+
+	cmd := &DoneCmd{ID: task.ID}
+	if _, err := captureStdout(t, cmd.Run); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	cr, _ := core.Open(core.Options{Warn: func(string, error) {}})
+	defer func() { _ = cr.Close() }()
+	got, err := cr.Show(task.ID)
+	if err != nil {
+		t.Fatalf("Show: %v", err)
+	}
+	if got.Status != storage.StatusDone {
+		t.Errorf("status = %s, want done", got.Status)
+	}
+}
+
+func TestDoneCmd_OffProjectErrorsWithHint(t *testing.T) {
+	setupDFCRoot(t)
+	saved := captureFirst(t, "in acme")
+
+	cmd := &DoneCmd{ID: saved.ID}
+	_, err := captureStdout(t, cmd.Run)
+	if err == nil {
+		t.Fatal("expected error for off-cwd ID")
+	}
+	if !strings.Contains(err.Error(), "--all-projects") {
+		t.Errorf("hint missing in error: %v", err)
+	}
+}
+
+func TestDoneCmd_AllProjectsFlagFindsAcrossProjects(t *testing.T) {
+	setupDFCRoot(t)
+	saved := captureFirst(t, "in acme")
+
+	cmd := &DoneCmd{ID: saved.ID, AllProjects: true}
+	if _, err := captureStdout(t, cmd.Run); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+}
+
+func TestReopenCmd_CwdDefault(t *testing.T) {
+	setupDFCRoot(t)
+	_, task := captureInCwdProject(t, "to be reopened")
+	if _, _, err := func() (storage.Task, bool, error) {
+		cr, _ := core.Open(core.Options{Warn: func(string, error) {}})
+		defer func() { _ = cr.Close() }()
+		return cr.SetStatus(task.ID, storage.StatusDone)
+	}(); err != nil {
+		t.Fatalf("SetStatus done: %v", err)
+	}
+
+	cmd := &ReopenCmd{ID: task.ID}
+	if _, err := captureStdout(t, cmd.Run); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+}
+
+func TestEditCmd_CwdDefaultAndOffProject(t *testing.T) {
+	setupDFCRoot(t)
+	_, task := captureInCwdProject(t, "edit me")
+	newDesc := "edited"
+
+	cmd := &EditCmd{ID: task.ID, Description: &newDesc}
+	if _, err := captureStdout(t, cmd.Run); err != nil {
+		t.Fatalf("cwd Run: %v", err)
+	}
+
+	saved := captureFirst(t, "other project")
+	off := &EditCmd{ID: saved.ID, Description: &newDesc}
+	_, err := captureStdout(t, off.Run)
+	if err == nil || !strings.Contains(err.Error(), "--all-projects") {
+		t.Fatalf("expected hint error for off-cwd Edit, got: %v", err)
+	}
+
+	allFlag := &EditCmd{ID: saved.ID, Description: &newDesc, AllProjects: true}
+	if _, err := captureStdout(t, allFlag.Run); err != nil {
+		t.Fatalf("--all-projects Edit: %v", err)
+	}
+}
+
+func TestRmCmd_CwdDefaultAndOffProject(t *testing.T) {
+	setupDFCRoot(t)
+	_, task := captureInCwdProject(t, "rm cwd")
+	cmd := &RmCmd{ID: task.ID}
+	if _, err := captureStdout(t, cmd.Run); err != nil {
+		t.Fatalf("cwd Run: %v", err)
+	}
+
+	saved := captureFirst(t, "rm in acme")
+	off := &RmCmd{ID: saved.ID}
+	_, err := captureStdout(t, off.Run)
+	if err == nil || !strings.Contains(err.Error(), "--all-projects") {
+		t.Fatalf("expected hint error for off-cwd Rm, got: %v", err)
+	}
+}
+
+func TestShowCmd_CwdDefaultAndOffProject(t *testing.T) {
+	setupDFCRoot(t)
+	_, task := captureInCwdProject(t, "show me")
+	cmd := &ShowCmd{ID: task.ID}
+	if _, err := captureStdout(t, cmd.Run); err != nil {
+		t.Fatalf("cwd Run: %v", err)
+	}
+
+	saved := captureFirst(t, "in acme")
+	off := &ShowCmd{ID: saved.ID}
+	_, err := captureStdout(t, off.Run)
+	if err == nil || !strings.Contains(err.Error(), "--all-projects") {
+		t.Fatalf("expected hint error for off-cwd Show, got: %v", err)
+	}
+}
+
+func TestCaptureCmd_AcceptsDisplayName(t *testing.T) {
+	setupDFCRoot(t)
+
+	// Seed a project with a friendly name distinct from its slug.
+	cr, _ := core.Open(core.Options{Warn: func(string, error) {}})
+	if _, err := cr.Capture(core.CaptureInput{Slug: "github-com-acme-widget", Description: "seed", DisplayName: "Acme/Widget"}); err != nil {
+		_ = cr.Close()
+		t.Fatalf("seed capture: %v", err)
+	}
+	_ = cr.Close()
+
+	// Capture again using the display name — should resolve back to the same slug.
+	cmd := &CaptureCmd{Project: "Acme/Widget", Description: []string{"second"}}
+	if _, err := captureStdout(t, cmd.Run); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	cr2, _ := core.Open(core.Options{Warn: func(string, error) {}})
+	defer func() { _ = cr2.Close() }()
+	tasks, _ := cr2.List("github-com-acme-widget")
+	if len(tasks) != 2 {
+		t.Errorf("expected both captures in one slug, got %d tasks", len(tasks))
+	}
+}
+
+func TestCaptureCmd_NameLookupCaseInsensitive(t *testing.T) {
+	setupDFCRoot(t)
+
+	cr, _ := core.Open(core.Options{Warn: func(string, error) {}})
+	if _, err := cr.Capture(core.CaptureInput{Slug: "github-com-acme-widget", Description: "seed", DisplayName: "Acme/Widget"}); err != nil {
+		_ = cr.Close()
+		t.Fatalf("seed capture: %v", err)
+	}
+	_ = cr.Close()
+
+	cmd := &CaptureCmd{Project: "acme/widget", Description: []string{"second"}}
+	if _, err := captureStdout(t, cmd.Run); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	cr2, _ := core.Open(core.Options{Warn: func(string, error) {}})
+	defer func() { _ = cr2.Close() }()
+	tasks, _ := cr2.List("github-com-acme-widget")
+	if len(tasks) != 2 {
+		t.Errorf("case-insensitive lookup should land in the canonical slug, got %d tasks", len(tasks))
+	}
+}
+
+func TestLsCmd_UnknownProjectErrors(t *testing.T) {
+	setupDFCRoot(t)
+	cmd := &LsCmd{Project: "no-such-thing", Status: "all"}
+	_, err := captureStdout(t, cmd.Run)
+	if err == nil || !strings.Contains(err.Error(), "unknown project") {
+		t.Errorf("expected unknown-project error, got %v", err)
+	}
+}
+
+func TestLsCmd_AcceptsDisplayName(t *testing.T) {
+	setupDFCRoot(t)
+	cr, _ := core.Open(core.Options{Warn: func(string, error) {}})
+	if _, err := cr.Capture(core.CaptureInput{Slug: "github-com-acme-widget", Description: "a task", DisplayName: "Acme/Widget"}); err != nil {
+		_ = cr.Close()
+		t.Fatalf("seed: %v", err)
+	}
+	_ = cr.Close()
+
+	cmd := &LsCmd{Project: "Acme/Widget", Status: "all"}
+	out, err := captureStdout(t, cmd.Run)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !strings.Contains(out, "a task") {
+		t.Errorf("expected task to appear when looked up by display name; got %q", out)
 	}
 }
 

@@ -15,7 +15,7 @@ import (
 // project; -a/--all merges every registered project. --status filters by
 // open/done. --json switches the human one-line format to NDJSON.
 type LsCmd struct {
-	Project string `name:"project" short:"p" help:"List tasks for this project slug (defaults to cwd)."`
+	Project string `name:"project" short:"p" predictor:"project" help:"List tasks for this project slug (defaults to cwd)."`
 	All     bool   `name:"all" short:"a" help:"List tasks from every registered project."`
 	Status  string `name:"status" enum:"open,done,all" default:"all" help:"Filter by status."`
 	JSON    bool   `name:"json" help:"Emit one JSON object per line (NDJSON)."`
@@ -42,7 +42,8 @@ func (c *LsCmd) Run() error {
 		}
 	default:
 		slug := c.Project
-		if slug == "" {
+		switch {
+		case slug == "":
 			cwd, err := os.Getwd()
 			if err != nil {
 				return err
@@ -52,6 +53,15 @@ func (c *LsCmd) Run() error {
 				return err
 			}
 			slug = resolved.Slug
+		default:
+			resolved, _, found, err := resolveProjectInput(slug)
+			if err != nil {
+				return err
+			}
+			if !found {
+				return fmt.Errorf("unknown project %q", slug)
+			}
+			slug = resolved
 		}
 		tasks, err = cr.List(slug)
 		if err != nil {

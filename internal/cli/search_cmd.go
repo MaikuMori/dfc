@@ -18,7 +18,7 @@ import (
 // (`mac` → `mac*` → matches `macos`); phrases stay exact; `-term`
 // negates exactly.
 type SearchCmd struct {
-	Project string   `name:"project" short:"p" help:"Restrict to this project slug (overrides cwd)."`
+	Project string   `name:"project" short:"p" predictor:"project" help:"Restrict to this project slug (overrides cwd)."`
 	All     bool     `name:"all" short:"a" help:"Search every project, not just the current one."`
 	Status  string   `name:"status" enum:"open,done,all" default:"all" help:"Filter by status."`
 	Limit   int      `name:"limit" short:"n" default:"20" help:"Maximum hits to return."`
@@ -31,7 +31,7 @@ type SearchCmd struct {
 // SsCmd is the explicit global-scope sibling. Same flags, but starts
 // out searching every project.
 type SsCmd struct {
-	Project string   `name:"project" short:"p" help:"Restrict to this project slug."`
+	Project string   `name:"project" short:"p" predictor:"project" help:"Restrict to this project slug."`
 	Status  string   `name:"status" enum:"open,done,all" default:"all" help:"Filter by status."`
 	Limit   int      `name:"limit" short:"n" default:"20" help:"Maximum hits to return."`
 	Sort    string   `name:"sort" enum:"score,modified" default:"score" help:"Order results by score or recency."`
@@ -91,12 +91,22 @@ func (c *SearchCmd) Run() error {
 	q := strings.Join(c.Query, " ")
 
 	// Resolve effective scope:
-	//   - explicit -p slug wins
+	//   - explicit -p slug/name wins (resolved through the registry)
 	//   - --all forces global
 	//   - otherwise default to cwd's project (the `dfc s` shape the
 	//     user expects). `dfc ss` is the global-by-default sibling.
 	scope := c.Project
-	if scope == "" && !c.All {
+	switch {
+	case scope != "":
+		resolved, _, found, err := resolveProjectInput(scope)
+		if err != nil {
+			return err
+		}
+		if !found {
+			return fmt.Errorf("unknown project %q", scope)
+		}
+		scope = resolved
+	case !c.All:
 		cwd, err := os.Getwd()
 		if err != nil {
 			return err

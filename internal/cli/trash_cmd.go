@@ -94,7 +94,7 @@ func (c *TrashListCmd) Run() error {
 
 // TrashRestoreCmd brings back a specific trash entry.
 type TrashRestoreCmd struct {
-	ID   string `arg:"" help:"Trash entry id or unique prefix."`
+	ID   string `arg:"" predictor:"trash-id" help:"Trash entry id or unique prefix."`
 	JSON bool   `name:"json" help:"Emit the restored entry as a single JSON object."`
 }
 

@@ -295,6 +295,127 @@ func TestShowUnknownIDIsNotFound(t *testing.T) {
 	}
 }
 
+func TestFindByIDInProjectFindsAndIsolates(t *testing.T) {
+	cr := newTestCore(t)
+	a, _ := cr.Capture(CaptureInput{Slug: "alpha", Description: "in alpha"})
+	b, _ := cr.Capture(CaptureInput{Slug: "beta", Description: "in beta"})
+
+	path, err := cr.FindByIDInProject(a.Task.ID, "alpha")
+	if err != nil {
+		t.Fatalf("FindByIDInProject(alpha): %v", err)
+	}
+	if path == "" {
+		t.Fatalf("alpha task should be findable in alpha")
+	}
+
+	path, err = cr.FindByIDInProject(a.Task.ID, "beta")
+	if err != nil {
+		t.Fatalf("FindByIDInProject(beta): %v", err)
+	}
+	if path != "" {
+		t.Errorf("alpha task should not be findable in beta, got %q", path)
+	}
+
+	path, err = cr.FindByIDInProject(b.Task.ID, "beta")
+	if err != nil {
+		t.Fatalf("FindByIDInProject(beta, b): %v", err)
+	}
+	if path == "" {
+		t.Errorf("beta task should be findable in beta")
+	}
+}
+
+func TestFindByIDInProjectMissingProject(t *testing.T) {
+	cr := newTestCore(t)
+	res, _ := cr.Capture(CaptureInput{Slug: "alpha", Description: "x"})
+
+	path, err := cr.FindByIDInProject(res.Task.ID, "no-such-project")
+	if err != nil {
+		t.Fatalf("FindByIDInProject: %v", err)
+	}
+	if path != "" {
+		t.Errorf("expected empty path for missing project, got %q", path)
+	}
+}
+
+func TestSetStatusInProjectScopesToSlug(t *testing.T) {
+	cr := newTestCore(t)
+	a, _ := cr.Capture(CaptureInput{Slug: "alpha", Description: "alpha task"})
+	cr.Capture(CaptureInput{Slug: "beta", Description: "beta task"})
+
+	_, _, err := cr.SetStatusInProject(a.Task.ID, "beta", storage.StatusDone)
+	if err == nil {
+		t.Fatalf("expected NotFound for cross-project SetStatusInProject")
+	}
+	var nf *NotFoundError
+	if !errors.As(err, &nf) {
+		t.Errorf("expected NotFoundError, got %T: %v", err, err)
+	}
+
+	got, changed, err := cr.SetStatusInProject(a.Task.ID, "alpha", storage.StatusDone)
+	if err != nil {
+		t.Fatalf("SetStatusInProject(alpha): %v", err)
+	}
+	if !changed || got.Status != storage.StatusDone {
+		t.Errorf("expected change to done in alpha, changed=%v status=%s", changed, got.Status)
+	}
+}
+
+func TestEditInProjectScopesToSlug(t *testing.T) {
+	cr := newTestCore(t)
+	a, _ := cr.Capture(CaptureInput{Slug: "alpha", Description: "old"})
+	cr.Capture(CaptureInput{Slug: "beta", Description: "beta"})
+
+	newDesc := "new"
+	if _, err := cr.EditInProject(EditInput{ID: a.Task.ID, Description: &newDesc}, "beta"); err == nil {
+		t.Errorf("expected NotFound for cross-project EditInProject")
+	}
+
+	updated, err := cr.EditInProject(EditInput{ID: a.Task.ID, Description: &newDesc}, "alpha")
+	if err != nil {
+		t.Fatalf("EditInProject(alpha): %v", err)
+	}
+	if updated.Description != newDesc {
+		t.Errorf("EditInProject did not update description: %q", updated.Description)
+	}
+}
+
+func TestRemoveInProjectScopesToSlug(t *testing.T) {
+	cr := newTestCore(t)
+	a, _ := cr.Capture(CaptureInput{Slug: "alpha", Description: "x"})
+	cr.Capture(CaptureInput{Slug: "beta", Description: "y"})
+
+	if _, _, _, err := cr.RemoveInProject(a.Task.ID, "beta"); err == nil {
+		t.Errorf("expected NotFound for cross-project RemoveInProject")
+	}
+
+	slug, _, trashID, err := cr.RemoveInProject(a.Task.ID, "alpha")
+	if err != nil {
+		t.Fatalf("RemoveInProject(alpha): %v", err)
+	}
+	if slug != "alpha" || trashID == "" {
+		t.Errorf("RemoveInProject returned slug=%q trashID=%q", slug, trashID)
+	}
+}
+
+func TestShowInProjectScopesToSlug(t *testing.T) {
+	cr := newTestCore(t)
+	a, _ := cr.Capture(CaptureInput{Slug: "alpha", Description: "alpha task"})
+	cr.Capture(CaptureInput{Slug: "beta", Description: "beta task"})
+
+	if _, err := cr.ShowInProject(a.Task.ID, "beta"); err == nil {
+		t.Errorf("expected NotFound for cross-project ShowInProject")
+	}
+
+	got, err := cr.ShowInProject(a.Task.ID, "alpha")
+	if err != nil {
+		t.Fatalf("ShowInProject(alpha): %v", err)
+	}
+	if got.Description != "alpha task" {
+		t.Errorf("ShowInProject returned wrong task: %q", got.Description)
+	}
+}
+
 func TestShowRejectsShortID(t *testing.T) {
 	cr := newTestCore(t)
 	if _, err := cr.Show("short"); err == nil {

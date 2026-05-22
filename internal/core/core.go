@@ -194,14 +194,25 @@ func (c *Core) Capture(in CaptureInput) (CaptureResult, error) {
 	return CaptureResult{Task: saved, NewProject: isNew}, nil
 }
 
-// SetStatus flips a task's status by ULID. Returns the post-update
-// task and changed=false when the task was already in the requested
-// state.
-func (c *Core) SetStatus(id string, status storage.Status) (t storage.Task, changed bool, err error) {
+// SetStatus flips a task's status by ULID, scanning every project for
+// the ID. Returns the post-update task and changed=false when the task
+// was already in the requested state.
+func (c *Core) SetStatus(id string, status storage.Status) (storage.Task, bool, error) {
+	return c.setStatus(id, "", status)
+}
+
+// SetStatusInProject is SetStatus restricted to a single project slug.
+// Returns NotFoundError when the ID isn't in that project, even if it
+// exists elsewhere.
+func (c *Core) SetStatusInProject(id, slug string, status storage.Status) (storage.Task, bool, error) {
+	return c.setStatus(id, slug, status)
+}
+
+func (c *Core) setStatus(id, scopeSlug string, status storage.Status) (storage.Task, bool, error) {
 	if err := validateID(id); err != nil {
 		return storage.Task{}, false, err
 	}
-	slug, path, err := c.FindByID(id)
+	slug, path, err := c.findByIDScoped(id, scopeSlug)
 	if err != nil {
 		return storage.Task{}, false, err
 	}
@@ -234,15 +245,25 @@ type EditInput struct {
 	Details     *string
 }
 
-// Edit applies the requested changes.
+// Edit applies the requested changes, scanning every project for the ID.
 func (c *Core) Edit(in EditInput) (storage.Task, error) {
+	return c.edit(in, "")
+}
+
+// EditInProject restricts the lookup to a single slug. Returns
+// NotFoundError when the ID isn't in that project.
+func (c *Core) EditInProject(in EditInput, slug string) (storage.Task, error) {
+	return c.edit(in, slug)
+}
+
+func (c *Core) edit(in EditInput, scopeSlug string) (storage.Task, error) {
 	if err := validateID(in.ID); err != nil {
 		return storage.Task{}, err
 	}
 	if in.Description == nil && in.Details == nil {
 		return storage.Task{}, errors.New("nothing to change")
 	}
-	slug, path, err := c.FindByID(in.ID)
+	slug, path, err := c.findByIDScoped(in.ID, scopeSlug)
 	if err != nil {
 		return storage.Task{}, err
 	}
@@ -273,15 +294,25 @@ func (c *Core) Edit(in EditInput) (storage.Task, error) {
 	return t, nil
 }
 
-// Remove soft-deletes a task by ULID: moves the file into the trash
-// (recoverable via Undo / Restore until the TTL sweep gets it) and drops
-// the index row. Returns the slug, path, and trash entry id so callers
-// can echo a "deleted X · u to undo" hint.
+// Remove soft-deletes a task by ULID, scanning every project for the
+// ID. Moves the file into the trash (recoverable via Undo / Restore
+// until the TTL sweep gets it) and drops the index row. Returns the
+// slug, path, and trash entry id so callers can echo a "deleted X ·
+// u to undo" hint.
 func (c *Core) Remove(id string) (slug, path, trashID string, err error) {
+	return c.remove(id, "")
+}
+
+// RemoveInProject restricts Remove to a single project slug.
+func (c *Core) RemoveInProject(id, slug string) (string, string, string, error) {
+	return c.remove(id, slug)
+}
+
+func (c *Core) remove(id, scopeSlug string) (slug, path, trashID string, err error) {
 	if err := validateID(id); err != nil {
 		return "", "", "", err
 	}
-	slug, path, err = c.FindByID(id)
+	slug, path, err = c.findByIDScoped(id, scopeSlug)
 	if err != nil {
 		return "", "", "", err
 	}
@@ -487,12 +518,21 @@ func (c *Core) RenameTask(t *storage.Task, newDesc string) error {
 	return nil
 }
 
-// Show returns a task by full ULID.
+// Show returns a task by full ULID, scanning every project.
 func (c *Core) Show(id string) (storage.Task, error) {
+	return c.show(id, "")
+}
+
+// ShowInProject restricts Show to a single project slug.
+func (c *Core) ShowInProject(id, slug string) (storage.Task, error) {
+	return c.show(id, slug)
+}
+
+func (c *Core) show(id, scopeSlug string) (storage.Task, error) {
 	if err := validateID(id); err != nil {
 		return storage.Task{}, err
 	}
-	slug, path, err := c.FindByID(id)
+	slug, path, err := c.findByIDScoped(id, scopeSlug)
 	if err != nil {
 		return storage.Task{}, err
 	}
@@ -504,6 +544,34 @@ func (c *Core) Show(id string) (storage.Task, error) {
 		return storage.Task{}, err
 	}
 	return store.Load(path)
+}
+
+// FindByIDInProject looks up a task by ULID in a single project slug.
+// Returns ("", nil) when the slug has no on-disk directory or the ID
+// isn't present in it.
+func (c *Core) FindByIDInProject(id, slug string) (path string, err error) {
+	if !storage.ProjectDirExists(slug) {
+		return "", nil
+	}
+	store, err := c.StoreFor(slug)
+	if err != nil {
+		return "", err
+	}
+	return store.FindByID(id)
+}
+
+// findByIDScoped routes between all-projects and single-slug lookup. An
+// empty scopeSlug means "scan every project" (FindByID); a non-empty
+// scopeSlug restricts to that one project.
+func (c *Core) findByIDScoped(id, scopeSlug string) (slug, path string, err error) {
+	if scopeSlug == "" {
+		return c.FindByID(id)
+	}
+	path, err = c.FindByIDInProject(id, scopeSlug)
+	if err != nil {
+		return "", "", err
+	}
+	return scopeSlug, path, nil
 }
 
 // FindByID walks every project under the dfc root and returns the

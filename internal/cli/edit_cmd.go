@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/MaikuMori/dfc/internal/core"
+	"github.com/MaikuMori/dfc/internal/storage"
 )
 
 
@@ -23,7 +24,8 @@ type EditCmd struct {
 	Description *string `name:"description" help:"New description (heading text). Omit to leave unchanged."`
 	Details     *string `name:"details" short:"d" help:"New details body. Use '-' to read from stdin. Omit to leave unchanged."`
 	JSON        bool    `name:"json" help:"Emit the updated task as a single JSON object."`
-	ID          string  `arg:"" help:"Full task ID (26-char ULID)."`
+	AllProjects bool    `name:"all-projects" short:"a" help:"Search every project for this ID (default: only the cwd project)."`
+	ID          string  `arg:"" predictor:"task-any" help:"Full task ID (26-char ULID)."`
 }
 
 func (c *EditCmd) Run() error {
@@ -51,7 +53,17 @@ func (c *EditCmd) Run() error {
 	}
 	defer func() { _ = cr.Close() }()
 
-	t, err := cr.Edit(in)
+	var t storage.Task
+	if c.AllProjects {
+		t, err = cr.Edit(in)
+	} else {
+		slug, slugErr := resolveCwdSlug()
+		if slugErr != nil {
+			return slugErr
+		}
+		t, err = cr.EditInProject(in, slug)
+		err = scopedNotFoundHint(err, c.ID, slug)
+	}
 	if err != nil {
 		return err
 	}

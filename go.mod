@@ -12,6 +12,7 @@ require (
 	github.com/mattn/go-runewidth v0.0.23
 	github.com/muesli/reflow v0.3.0
 	github.com/oklog/ulid/v2 v2.1.1
+	github.com/posener/complete v1.2.3
 	github.com/sahilm/fuzzy v0.1.2
 	github.com/willabides/kongplete v0.4.0
 	github.com/yuin/goldmark v1.8.2
@@ -44,7 +45,6 @@ require (
 	github.com/microcosm-cc/bluemonday v1.0.27 // indirect
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
-	github.com/posener/complete v1.2.3 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/riywo/loginshell v0.0.0-20200815045211-7d26008be1ab // indirect

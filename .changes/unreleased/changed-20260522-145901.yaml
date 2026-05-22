@@ -1,0 +1,3 @@
+kind: changed
+body: done, reopen, edit, rm, and show default to looking up the ULID in the cwd-resolved project. Off-project IDs error with a hint to pass --all-projects.
+time: 2026-05-22T14:59:01.154386-04:00

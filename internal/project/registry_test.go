@@ -241,6 +241,83 @@ func TestRegistry_SetTagUnknownSlugErrors(t *testing.T) {
 	}
 }
 
+func TestRegistry_RegisterFallsBackOnNameCollision(t *testing.T) {
+	dir := t.TempDir()
+	r, _ := loadRegistryFromPath(filepath.Join(dir, "projects.json"))
+	r.Register("alpha", "shared")
+	r.Register("beta", "shared")
+
+	if got := r.Name("alpha"); got != "shared" {
+		t.Errorf("alpha name = %q, want shared", got)
+	}
+	if got := r.Name("beta"); got != "beta" {
+		t.Errorf("beta should have fallen back to slug, got %q", got)
+	}
+}
+
+func TestRegistry_RenameRejectsCollision(t *testing.T) {
+	dir := t.TempDir()
+	r, _ := loadRegistryFromPath(filepath.Join(dir, "projects.json"))
+	r.Register("alpha", "Alpha")
+	r.Register("beta", "Beta")
+
+	if err := r.Rename("beta", "Alpha"); err == nil {
+		t.Errorf("expected error renaming beta to a name already in use")
+	}
+	if err := r.Rename("beta", "alpha"); err == nil {
+		t.Errorf("expected case-insensitive collision rejection")
+	}
+	if err := r.Rename("beta", "Beta"); err != nil {
+		t.Errorf("renaming beta to its existing name should succeed: %v", err)
+	}
+	if err := r.Rename("beta", "Gamma"); err != nil {
+		t.Errorf("renaming beta to a free name should succeed: %v", err)
+	}
+}
+
+func TestRegistry_SetTagRejectsCollision(t *testing.T) {
+	dir := t.TempDir()
+	r, _ := loadRegistryFromPath(filepath.Join(dir, "projects.json"))
+	r.Register("alpha", "Alpha")
+	r.Register("beta", "Beta")
+	if err := r.SetTag("alpha", "shared"); err != nil {
+		t.Fatalf("first SetTag: %v", err)
+	}
+	if err := r.SetTag("beta", "shared"); err == nil {
+		t.Errorf("expected error on tag collision")
+	}
+	if err := r.SetTag("beta", "SHARED"); err == nil {
+		t.Errorf("expected case-insensitive tag collision rejection")
+	}
+}
+
+func TestRegistry_LookupSlug(t *testing.T) {
+	dir := t.TempDir()
+	r, _ := loadRegistryFromPath(filepath.Join(dir, "projects.json"))
+	r.Register("alpha-slug", "Alpha")
+	r.Register("beta-slug", "Beta")
+
+	got, err := r.LookupSlug("alpha-slug")
+	if err != nil || got != "alpha-slug" {
+		t.Errorf("slug match: got (%q,%v)", got, err)
+	}
+
+	got, err = r.LookupSlug("Alpha")
+	if err != nil || got != "alpha-slug" {
+		t.Errorf("name match: got (%q,%v)", got, err)
+	}
+
+	got, err = r.LookupSlug("ALPHA")
+	if err != nil || got != "alpha-slug" {
+		t.Errorf("case-insensitive name match: got (%q,%v)", got, err)
+	}
+
+	got, err = r.LookupSlug("nothing")
+	if err != nil || got != "" {
+		t.Errorf("miss should return empty without error: got (%q,%v)", got, err)
+	}
+}
+
 func TestRegistry_Slugs(t *testing.T) {
 	dir := t.TempDir()
 	r, _ := loadRegistryFromPath(filepath.Join(dir, "projects.json"))

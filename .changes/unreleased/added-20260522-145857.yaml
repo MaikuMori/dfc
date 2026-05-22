@@ -1,0 +1,3 @@
+kind: added
+body: 'Tab completion: project slugs and display names after -p/--project, task ULIDs for done/reopen/edit/rm/show, and trash entry IDs for trash restore. zsh and fish menus show the task description next to each ULID.'
+time: 2026-05-22T14:58:57.799455-04:00

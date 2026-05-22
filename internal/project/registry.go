@@ -108,11 +108,17 @@ func (r *Registry) Has(slug string) bool {
 	return ok
 }
 
-// Register adds (or refreshes) an entry. Returns true if it was newly added.
-// Existing LastUsed is preserved.
+// Register adds (or refreshes) an entry. Returns true if it was newly
+// added. Existing LastUsed is preserved. When name collides with another
+// slug's name (case-folded), Register silently falls back to using the
+// slug as the name — keeps auto-derived display names (from cwd / git
+// remotes) from breaking the capture flow on collision.
 func (r *Registry) Register(slug, name string) bool {
 	existing, existed := r.entries[slug]
-	r.entries[slug] = Entry{Name: name, LastUsed: existing.LastUsed}
+	if name == "" || r.nameInUse(name, slug) != "" {
+		name = slug
+	}
+	r.entries[slug] = Entry{Name: name, LastUsed: existing.LastUsed, Tag: existing.Tag}
 	return !existed
 }
 
@@ -134,10 +140,16 @@ func (r *Registry) LastUsed(slug string) time.Time {
 }
 
 // Rename updates the display name for slug, preserving LastUsed, and writes
-// the registry to disk.
+// the registry to disk. Errors when name collides with another slug's name
+// (case-folded). Empty name reverts to using the slug itself as the name.
 func (r *Registry) Rename(slug, name string) error {
 	if !r.Has(slug) {
 		return fmt.Errorf("unknown project slug %q", slug)
+	}
+	if name == "" {
+		name = slug
+	} else if other := r.nameInUse(name, slug); other != "" {
+		return fmt.Errorf("project name %q already used by slug %q", name, other)
 	}
 	e := r.entries[slug]
 	e.Name = name
@@ -169,15 +181,51 @@ func (r *Registry) Unregister(slug string) error {
 }
 
 // SetTag writes a custom tag for slug, preserving Name and LastUsed.
-// Passing "" reverts to the derived default.
+// Passing "" reverts to the derived default. Errors when tag collides
+// with another slug's effective tag (case-folded).
 func (r *Registry) SetTag(slug, tag string) error {
 	if !r.Has(slug) {
 		return fmt.Errorf("unknown project slug %q", slug)
+	}
+	if tag != "" {
+		if other := r.tagInUse(tag, slug); other != "" {
+			return fmt.Errorf("project tag %q already used by slug %q", tag, other)
+		}
 	}
 	e := r.entries[slug]
 	e.Tag = tag
 	r.entries[slug] = e
 	return r.Save()
+}
+
+// nameInUse returns the slug currently holding name (case-folded), or
+// "" when no entry uses it. excludeSlug skips self-comparison.
+func (r *Registry) nameInUse(name, excludeSlug string) string {
+	for slug, e := range r.entries {
+		if slug == excludeSlug {
+			continue
+		}
+		if strings.EqualFold(e.Name, name) {
+			return slug
+		}
+	}
+	return ""
+}
+
+// tagInUse returns the slug currently holding tag (case-folded), or ""
+// when no entry uses it. Compares against effective tags (custom or
+// derived) so we don't accidentally collide with another project's
+// default. excludeSlug skips self-comparison.
+func (r *Registry) tagInUse(tag, excludeSlug string) string {
+	for slug := range r.entries {
+		if slug == excludeSlug {
+			continue
+		}
+		if strings.EqualFold(r.Tag(slug), tag) {
+			return slug
+		}
+	}
+	return ""
 }
 
 // DefaultTag returns the last `-`-separated segment of slug, or the slug
@@ -190,6 +238,36 @@ func DefaultTag(slug string) string {
 		return slug[i+1:]
 	}
 	return slug
+}
+
+// LookupSlug resolves input to a canonical project slug. input may be a
+// registered slug (case-sensitive — slugs are normalized) or a display
+// name (case-insensitive). Returns ("", nil) when input matches
+// neither. Names are unique by construction (Register / Rename enforce
+// it); when historic data carries duplicates, LookupSlug surfaces the
+// ambiguity instead of guessing.
+func (r *Registry) LookupSlug(input string) (string, error) {
+	if input == "" {
+		return "", nil
+	}
+	if r.Has(input) {
+		return input, nil
+	}
+	var matches []string
+	for slug, e := range r.entries {
+		if strings.EqualFold(e.Name, input) {
+			matches = append(matches, slug)
+		}
+	}
+	switch len(matches) {
+	case 0:
+		return "", nil
+	case 1:
+		return matches[0], nil
+	default:
+		sort.Strings(matches)
+		return "", fmt.Errorf("project name %q is ambiguous; matches slugs %s", input, strings.Join(matches, ", "))
+	}
 }
 
 // Slugs returns all known slugs in alphabetical order.

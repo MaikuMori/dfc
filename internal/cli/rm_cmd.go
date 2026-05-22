@@ -5,11 +5,12 @@ import (
 	"os"
 )
 
-// RmCmd removes a task by full ULID. ULIDs are globally unique so the
-// lookup walks every project until it finds a match.
+// RmCmd removes a task by full ULID. Defaults to the cwd project;
+// `--all-projects` searches every project (today's behaviour).
 type RmCmd struct {
-	JSON bool   `name:"json" help:"Emit the removed task's id/project/path as a single JSON object."`
-	ID   string `arg:"" help:"Full task ID (26-char ULID)."`
+	JSON        bool   `name:"json" help:"Emit the removed task's id/project/path as a single JSON object."`
+	AllProjects bool   `name:"all-projects" short:"a" help:"Search every project for this ID (default: only the cwd project)."`
+	ID          string `arg:"" predictor:"task-any" help:"Full task ID (26-char ULID)."`
 }
 
 func (c *RmCmd) Run() error {
@@ -19,7 +20,20 @@ func (c *RmCmd) Run() error {
 	}
 	defer func() { _ = cr.Close() }()
 
-	slug, path, trashID, err := cr.Remove(c.ID)
+	var (
+		slug, path, trashID string
+	)
+	if c.AllProjects {
+		slug, path, trashID, err = cr.Remove(c.ID)
+	} else {
+		var cwdSlug string
+		cwdSlug, err = resolveCwdSlug()
+		if err != nil {
+			return err
+		}
+		slug, path, trashID, err = cr.RemoveInProject(c.ID, cwdSlug)
+		err = scopedNotFoundHint(err, c.ID, cwdSlug)
+	}
 	if err != nil {
 		return err
 	}

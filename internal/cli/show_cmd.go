@@ -3,6 +3,8 @@ package cli
 import (
 	"fmt"
 	"os"
+
+	"github.com/MaikuMori/dfc/internal/storage"
 )
 
 // timestampLayout is the human-readable timestamp format used by every
@@ -10,11 +12,12 @@ import (
 // the canonical RFC3339 value; this is purely the rendered form.
 const timestampLayout = "2006-01-02 15:04:05 MST"
 
-// ShowCmd prints a single task by full ULID. ULIDs are globally unique so
-// the lookup walks every project until it finds a match.
+// ShowCmd prints a single task by full ULID. Defaults to the cwd
+// project; `--all-projects` searches every project (today's behaviour).
 type ShowCmd struct {
-	JSON bool   `name:"json" help:"Emit the task as a single JSON object."`
-	ID   string `arg:"" help:"Full task ID (26-char ULID)."`
+	JSON        bool   `name:"json" help:"Emit the task as a single JSON object."`
+	AllProjects bool   `name:"all-projects" short:"a" help:"Search every project for this ID (default: only the cwd project)."`
+	ID          string `arg:"" predictor:"task-any" help:"Full task ID (26-char ULID)."`
 }
 
 func (c *ShowCmd) Run() error {
@@ -24,7 +27,17 @@ func (c *ShowCmd) Run() error {
 	}
 	defer func() { _ = cr.Close() }()
 
-	t, err := cr.Show(c.ID)
+	var t storage.Task
+	if c.AllProjects {
+		t, err = cr.Show(c.ID)
+	} else {
+		slug, slugErr := resolveCwdSlug()
+		if slugErr != nil {
+			return slugErr
+		}
+		t, err = cr.ShowInProject(c.ID, slug)
+		err = scopedNotFoundHint(err, c.ID, slug)
+	}
 	if err != nil {
 		return err
 	}

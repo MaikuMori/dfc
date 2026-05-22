@@ -1,0 +1,3 @@
+kind: added
+body: -p/--project accepts a project's display name (case-insensitive) in addition to its slug.
+time: 2026-05-22T14:59:00.040186-04:00

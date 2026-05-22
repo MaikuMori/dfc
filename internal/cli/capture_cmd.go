@@ -24,7 +24,7 @@ import (
 //     details (useful for piping a buffer in).
 //   - `dfc c` (no args, TTY) — inline prompt overlay.
 type CaptureCmd struct {
-	Project     string   `name:"project" short:"p" help:"Target project slug (overrides cwd)."`
+	Project     string   `name:"project" short:"p" predictor:"project" help:"Target project slug (overrides cwd)."`
 	Details     string   `name:"details" short:"d" help:"Details body. Use '-' to read from stdin."`
 	JSON        bool     `name:"json" help:"Emit the created task as a single JSON object."`
 	Description []string `arg:"" optional:"" help:"Task description; use '-' to read description+details from stdin, omit to open an inline prompt."`
@@ -107,11 +107,14 @@ func (c *CaptureCmd) Run() error {
 
 // resolveCaptureTarget decides which project a capture lands in and
 // returns the display name Core should use when auto-registering it.
-// Explicit -p slug wins; otherwise cwd resolves to a slug with a
-// derived friendly name.
+// Explicit -p input is resolved through the registry (accepting slug
+// or display name); unknown values fall through as literal slugs so
+// capture can register new projects. Without -p, cwd resolves to a
+// slug + derived friendly name.
 func resolveCaptureTarget(explicit string) (slug, displayName string, err error) {
 	if explicit != "" {
-		return explicit, explicit, nil
+		slug, displayName, _, err = resolveProjectInput(explicit)
+		return slug, displayName, err
 	}
 	cwd, err := os.Getwd()
 	if err != nil {
