@@ -39,7 +39,7 @@ func taskOut(t storage.Task) TaskOut {
 type ProjectOut struct {
 	Slug     string    `json:"slug"`
 	Name     string    `json:"name"`
-	Tag      string    `json:"tag"`
+	Prefix   string    `json:"prefix"`
 	Open     int       `json:"open"`
 	Done     int       `json:"done"`
 	LastUsed time.Time `json:"last_used,omitempty"`
@@ -51,7 +51,7 @@ func projectOut(reg *project.Registry, slug string, open, done int) ProjectOut {
 	return ProjectOut{
 		Slug:     slug,
 		Name:     reg.Name(slug),
-		Tag:      reg.Tag(slug),
+		Prefix:   reg.Prefix(slug),
 		Open:     open,
 		Done:     done,
 		LastUsed: reg.LastUsed(slug),

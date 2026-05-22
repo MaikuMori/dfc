@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"os"
 	"sort"
 	"strings"
@@ -24,11 +25,37 @@ const completeDescMaxLen = 60
 func Predictors() map[string]complete.Predictor {
 	return map[string]complete.Predictor{
 		"project":   complete.PredictFunc(predictProjects),
+		"tag":       complete.PredictFunc(predictTags),
 		"task-open": complete.PredictFunc(predictTasksFn(scopeTaskOpen)),
 		"task-done": complete.PredictFunc(predictTasksFn(scopeTaskDone)),
 		"task-any":  complete.PredictFunc(predictTasksFn(scopeTaskAny)),
 		"trash-id":  complete.PredictFunc(predictTrashIDs),
 	}
+}
+
+func predictTags(_ complete.Args) []string {
+	reg, err := project.LoadRegistry()
+	if err != nil {
+		return nil
+	}
+	all := reg.AllTags()
+	rich := richFormat()
+	out := make([]string, 0, len(all)+1)
+	for _, t := range all {
+		if rich {
+			out = append(out, fmt.Sprintf("%s\t%d project%s", t.Name, len(t.Slugs), pluralS(len(t.Slugs))))
+			continue
+		}
+		out = append(out, t.Name)
+	}
+	if len(reg.UntaggedSlugs()) > 0 {
+		if rich {
+			out = append(out, fmt.Sprintf("(untagged)\t%d project%s", len(reg.UntaggedSlugs()), pluralS(len(reg.UntaggedSlugs()))))
+		} else {
+			out = append(out, "(untagged)")
+		}
+	}
+	return out
 }
 
 // taskFilter narrows the predictor's view onto a status subset.
@@ -96,7 +123,7 @@ func scopeFromArgs(a complete.Args) projectScope {
 	return projectScope{Slug: slug}
 }
 
-func predictProjects(a complete.Args) []string {
+func predictProjects(_ complete.Args) []string {
 	reg, err := project.LoadRegistry()
 	if err != nil {
 		return nil
@@ -114,7 +141,7 @@ func predictProjects(a complete.Args) []string {
 	for _, s := range slugs {
 		candidate, alternate := projectCandidate(reg.Name(s), s)
 		if rich && alternate != "" {
-			out = append(out, candidate+"\t"+truncate(alternate, completeDescMaxLen))
+			out = append(out, candidate+"\t"+truncate(alternate))
 			continue
 		}
 		out = append(out, candidate)
@@ -169,7 +196,7 @@ func predictTasksFn(filter taskFilter) func(complete.Args) []string {
 				continue
 			}
 			if rich {
-				out = append(out, t.ID+"\t"+truncate(t.Description, completeDescMaxLen))
+				out = append(out, t.ID+"\t"+truncate(t.Description))
 				continue
 			}
 			out = append(out, t.ID)
@@ -178,7 +205,7 @@ func predictTasksFn(filter taskFilter) func(complete.Args) []string {
 	}
 }
 
-func predictTrashIDs(a complete.Args) []string {
+func predictTrashIDs(_ complete.Args) []string {
 	entries, err := trash.List()
 	if err != nil {
 		return nil
@@ -191,7 +218,7 @@ func predictTrashIDs(a complete.Args) []string {
 			if label == "" {
 				label = string(e.Kind) + " " + e.Slug
 			}
-			out = append(out, e.ID+"\t"+truncate(label, completeDescMaxLen))
+			out = append(out, e.ID+"\t"+truncate(label))
 			continue
 		}
 		out = append(out, e.ID)
@@ -238,17 +265,10 @@ func richFormat() bool {
 // truncate caps s at max runes, replacing the tail with "…" when it
 // overflows. Rune-aware so multibyte glyphs don't blow the visual
 // budget that completion menus enforce.
-func truncate(s string, max int) string {
-	if max <= 0 {
-		return s
-	}
+func truncate(s string) string {
 	rs := []rune(s)
-	if len(rs) <= max {
+	if len(rs) <= completeDescMaxLen {
 		return s
 	}
-	cut := max - 1
-	if cut < 1 {
-		cut = 1
-	}
-	return string(rs[:cut]) + "…"
+	return string(rs[:completeDescMaxLen-1]) + "…"
 }

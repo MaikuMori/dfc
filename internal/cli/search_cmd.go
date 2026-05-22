@@ -20,6 +20,7 @@ import (
 type SearchCmd struct {
 	Project string   `name:"project" short:"p" predictor:"project" help:"Restrict to this project slug (overrides cwd)."`
 	All     bool     `name:"all" short:"a" help:"Search every project, not just the current one."`
+	Tag     []string `name:"tag" predictor:"tag" help:"Restrict to projects carrying this tag. Repeatable / comma-separated."`
 	Status  string   `name:"status" enum:"open,done,all" default:"all" help:"Filter by status."`
 	Limit   int      `name:"limit" short:"n" default:"20" help:"Maximum hits to return."`
 	Sort    string   `name:"sort" enum:"score,modified,created" default:"score" help:"Order results by score, modification time, or creation time."`
@@ -32,6 +33,7 @@ type SearchCmd struct {
 // out searching every project.
 type SsCmd struct {
 	Project string   `name:"project" short:"p" predictor:"project" help:"Restrict to this project slug."`
+	Tag     []string `name:"tag" predictor:"tag" help:"Restrict to projects carrying this tag. Repeatable / comma-separated."`
 	Status  string   `name:"status" enum:"open,done,all" default:"all" help:"Filter by status."`
 	Limit   int      `name:"limit" short:"n" default:"20" help:"Maximum hits to return."`
 	Sort    string   `name:"sort" enum:"score,modified,created" default:"score" help:"Order results by score, modification time, or creation time."`
@@ -44,6 +46,7 @@ func (c *SsCmd) Run() error {
 	return (&SearchCmd{
 		Project: c.Project,
 		All:     true,
+		Tag:     c.Tag,
 		Status:  c.Status,
 		Limit:   c.Limit,
 		Sort:    c.Sort,
@@ -118,11 +121,17 @@ func (c *SearchCmd) Run() error {
 		scope = resolved.Slug
 	}
 
+	var projectSet []string
+	if tagFilter := expandCommaTagFilter(c.Tag); len(tagFilter) > 0 {
+		projectSet = projectSlugsMatchingTags(cr.Registry(), tagFilter)
+	}
+
 	hits, err := cr.Search(q, index.SearchOpts{
-		Project: scope,
-		Status:  c.Status,
-		Limit:   c.Limit,
-		SortBy:  c.Sort,
+		Project:  scope,
+		Projects: projectSet,
+		Status:   c.Status,
+		Limit:    c.Limit,
+		SortBy:   c.Sort,
 	})
 	if err != nil {
 		return err

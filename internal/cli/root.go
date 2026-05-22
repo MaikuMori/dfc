@@ -14,6 +14,7 @@ type CLI struct {
 	Rm       RmCmd           `cmd:"" help:"Remove a task by full ULID."`
 	Projects ProjectsCmd     `cmd:"" help:"List every registered project."`
 	Project  ProjectCmd      `cmd:"" help:"Show the project resolved from the current directory."`
+	Tags     TagsCmd         `cmd:"" help:"Manage project categorical tags (show / add / rm / set / ls)."`
 	Undo     UndoCmd         `cmd:"" help:"Restore the most recently trashed task or project."`
 	Trash      TrashCmd      `cmd:"" help:"Inspect, restore, or empty the trash."`
 	Version    VersionCmd    `cmd:"" help:"Show build version, commit, and date."`

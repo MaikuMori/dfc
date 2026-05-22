@@ -341,7 +341,7 @@ func TestFindByIDInProjectMissingProject(t *testing.T) {
 func TestSetStatusInProjectScopesToSlug(t *testing.T) {
 	cr := newTestCore(t)
 	a, _ := cr.Capture(CaptureInput{Slug: "alpha", Description: "alpha task"})
-	cr.Capture(CaptureInput{Slug: "beta", Description: "beta task"})
+	_, _ = cr.Capture(CaptureInput{Slug: "beta", Description: "beta task"})
 
 	_, _, err := cr.SetStatusInProject(a.Task.ID, "beta", storage.StatusDone)
 	if err == nil {
@@ -364,7 +364,7 @@ func TestSetStatusInProjectScopesToSlug(t *testing.T) {
 func TestEditInProjectScopesToSlug(t *testing.T) {
 	cr := newTestCore(t)
 	a, _ := cr.Capture(CaptureInput{Slug: "alpha", Description: "old"})
-	cr.Capture(CaptureInput{Slug: "beta", Description: "beta"})
+	_, _ = cr.Capture(CaptureInput{Slug: "beta", Description: "beta"})
 
 	newDesc := "new"
 	if _, err := cr.EditInProject(EditInput{ID: a.Task.ID, Description: &newDesc}, "beta"); err == nil {
@@ -383,7 +383,7 @@ func TestEditInProjectScopesToSlug(t *testing.T) {
 func TestRemoveInProjectScopesToSlug(t *testing.T) {
 	cr := newTestCore(t)
 	a, _ := cr.Capture(CaptureInput{Slug: "alpha", Description: "x"})
-	cr.Capture(CaptureInput{Slug: "beta", Description: "y"})
+	_, _ = cr.Capture(CaptureInput{Slug: "beta", Description: "y"})
 
 	if _, _, _, err := cr.RemoveInProject(a.Task.ID, "beta"); err == nil {
 		t.Errorf("expected NotFound for cross-project RemoveInProject")
@@ -401,7 +401,7 @@ func TestRemoveInProjectScopesToSlug(t *testing.T) {
 func TestShowInProjectScopesToSlug(t *testing.T) {
 	cr := newTestCore(t)
 	a, _ := cr.Capture(CaptureInput{Slug: "alpha", Description: "alpha task"})
-	cr.Capture(CaptureInput{Slug: "beta", Description: "beta task"})
+	_, _ = cr.Capture(CaptureInput{Slug: "beta", Description: "beta task"})
 
 	if _, err := cr.ShowInProject(a.Task.ID, "beta"); err == nil {
 		t.Errorf("expected NotFound for cross-project ShowInProject")
@@ -607,9 +607,10 @@ func indexAllOpts() indexSearchOptsAlias {
 // these tests don't need to import internal/index directly. The Core
 // Search method accepts any value with the same field set.
 type indexSearchOptsAlias = struct {
-	Project string
-	Status  string
-	Limit   int
-	SortBy  string
+	Project  string
+	Projects []string
+	Status   string
+	Limit    int
+	SortBy   string
 }
 

@@ -265,7 +265,7 @@ func TestLsCmd_AllAndProjectMutuallyExclusive(t *testing.T) {
 // captureInCwdProject puts a task into whatever slug project.Resolve
 // returns for the current working directory. Use this in tests that
 // exercise the cwd-default ID lookup on done/edit/rm/show/reopen.
-func captureInCwdProject(t *testing.T, desc string) (slug string, task storage.Task) {
+func captureInCwdProject(t *testing.T, desc string) storage.Task {
 	t.Helper()
 	slug, err := resolveCwdSlug()
 	if err != nil {
@@ -280,12 +280,12 @@ func captureInCwdProject(t *testing.T, desc string) (slug string, task storage.T
 	if err != nil {
 		t.Fatalf("Capture: %v", err)
 	}
-	return slug, res.Task
+	return res.Task
 }
 
 func TestDoneCmd_CwdDefault(t *testing.T) {
 	setupDFCRoot(t)
-	_, task := captureInCwdProject(t, "in cwd")
+	task := captureInCwdProject(t, "in cwd")
 
 	cmd := &DoneCmd{ID: task.ID}
 	if _, err := captureStdout(t, cmd.Run); err != nil {
@@ -329,7 +329,7 @@ func TestDoneCmd_AllProjectsFlagFindsAcrossProjects(t *testing.T) {
 
 func TestReopenCmd_CwdDefault(t *testing.T) {
 	setupDFCRoot(t)
-	_, task := captureInCwdProject(t, "to be reopened")
+	task := captureInCwdProject(t, "to be reopened")
 	if _, _, err := func() (storage.Task, bool, error) {
 		cr, _ := core.Open(core.Options{Warn: func(string, error) {}})
 		defer func() { _ = cr.Close() }()
@@ -346,7 +346,7 @@ func TestReopenCmd_CwdDefault(t *testing.T) {
 
 func TestEditCmd_CwdDefaultAndOffProject(t *testing.T) {
 	setupDFCRoot(t)
-	_, task := captureInCwdProject(t, "edit me")
+	task := captureInCwdProject(t, "edit me")
 	newDesc := "edited"
 
 	cmd := &EditCmd{ID: task.ID, Description: &newDesc}
@@ -369,7 +369,7 @@ func TestEditCmd_CwdDefaultAndOffProject(t *testing.T) {
 
 func TestRmCmd_CwdDefaultAndOffProject(t *testing.T) {
 	setupDFCRoot(t)
-	_, task := captureInCwdProject(t, "rm cwd")
+	task := captureInCwdProject(t, "rm cwd")
 	cmd := &RmCmd{ID: task.ID}
 	if _, err := captureStdout(t, cmd.Run); err != nil {
 		t.Fatalf("cwd Run: %v", err)
@@ -385,7 +385,7 @@ func TestRmCmd_CwdDefaultAndOffProject(t *testing.T) {
 
 func TestShowCmd_CwdDefaultAndOffProject(t *testing.T) {
 	setupDFCRoot(t)
-	_, task := captureInCwdProject(t, "show me")
+	task := captureInCwdProject(t, "show me")
 	cmd := &ShowCmd{ID: task.ID}
 	if _, err := captureStdout(t, cmd.Run); err != nil {
 		t.Fatalf("cwd Run: %v", err)
@@ -471,6 +471,166 @@ func TestLsCmd_AcceptsDisplayName(t *testing.T) {
 	}
 	if !strings.Contains(out, "a task") {
 		t.Errorf("expected task to appear when looked up by display name; got %q", out)
+	}
+}
+
+// captureNamed seeds a task into an arbitrary slug. Lets the tag-flow
+// tests build a registry with several distinct projects without all of
+// them mapping to the cwd-resolved slug.
+func captureNamed(t *testing.T, slug, desc string) {
+	t.Helper()
+	cr, _ := core.Open(core.Options{Warn: func(string, error) {}})
+	defer func() { _ = cr.Close() }()
+	if _, err := cr.Capture(core.CaptureInput{Slug: slug, Description: desc, DisplayName: slug}); err != nil {
+		t.Fatalf("Capture(%s): %v", slug, err)
+	}
+}
+
+func TestTagsAddShowRm(t *testing.T) {
+	setupDFCRoot(t)
+	captureNamed(t, "acme", "buy milk")
+
+	add := &TagsAddCmd{Project: "acme", Tags: []string{"work", "oss"}}
+	out, err := captureStdout(t, add.Run)
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if !strings.Contains(out, "work") || !strings.Contains(out, "oss") {
+		t.Errorf("add output missing tags: %q", out)
+	}
+
+	show := &TagsShowCmd{Project: "acme"}
+	out, err = captureStdout(t, show.Run)
+	if err != nil {
+		t.Fatalf("Show: %v", err)
+	}
+	if !strings.Contains(out, "work") || !strings.Contains(out, "oss") {
+		t.Errorf("show missing tags: %q", out)
+	}
+
+	rm := &TagsRmCmd{Project: "acme", Tags: []string{"oss"}}
+	if _, err := captureStdout(t, rm.Run); err != nil {
+		t.Fatalf("Rm: %v", err)
+	}
+	show2 := &TagsShowCmd{Project: "acme"}
+	out, _ = captureStdout(t, show2.Run)
+	if strings.Contains(out, "oss") {
+		t.Errorf("rm should have dropped oss: %q", out)
+	}
+}
+
+func TestTagsSetReplacesEntireList(t *testing.T) {
+	setupDFCRoot(t)
+	captureNamed(t, "acme", "x")
+	_ = (&TagsAddCmd{Project: "acme", Tags: []string{"work", "oss"}}).Run()
+
+	set := &TagsSetCmd{Project: "acme", Tags: []string{"deploy", "billing"}}
+	if _, err := captureStdout(t, set.Run); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+	show := &TagsShowCmd{Project: "acme"}
+	out, _ := captureStdout(t, show.Run)
+	if strings.Contains(out, "work") || strings.Contains(out, "oss") {
+		t.Errorf("set should have replaced the tag list: %q", out)
+	}
+	if !strings.Contains(out, "deploy") || !strings.Contains(out, "billing") {
+		t.Errorf("set didn't install new tags: %q", out)
+	}
+}
+
+func TestTagsLsAggregates(t *testing.T) {
+	setupDFCRoot(t)
+	captureNamed(t, "acme", "x")
+	captureNamed(t, "beta", "y")
+	_ = (&TagsAddCmd{Project: "acme", Tags: []string{"work"}}).Run()
+	_ = (&TagsAddCmd{Project: "beta", Tags: []string{"work", "personal"}}).Run()
+
+	out, err := captureStdout(t, (&TagsLsCmd{}).Run)
+	if err != nil {
+		t.Fatalf("Ls: %v", err)
+	}
+	if !strings.Contains(out, "work") || !strings.Contains(out, "personal") {
+		t.Errorf("ls missing tag rows: %q", out)
+	}
+	if !strings.Contains(out, "acme") || !strings.Contains(out, "beta") {
+		t.Errorf("ls missing project slugs: %q", out)
+	}
+}
+
+func TestLsCmd_TagFilter(t *testing.T) {
+	setupDFCRoot(t)
+	captureNamed(t, "acme", "buy milk")
+	captureNamed(t, "beta", "ship release")
+	captureNamed(t, "gamma", "lonely task")
+	_ = (&TagsAddCmd{Project: "acme", Tags: []string{"work"}}).Run()
+	_ = (&TagsAddCmd{Project: "beta", Tags: []string{"work", "personal"}}).Run()
+
+	// --tag work → acme + beta tasks, not gamma.
+	cmd := &LsCmd{All: true, Tag: []string{"work"}, Status: "all"}
+	out, err := captureStdout(t, cmd.Run)
+	if err != nil {
+		t.Fatalf("ls --tag work: %v", err)
+	}
+	if !strings.Contains(out, "buy milk") || !strings.Contains(out, "ship release") {
+		t.Errorf("expected acme+beta tasks: %q", out)
+	}
+	if strings.Contains(out, "lonely task") {
+		t.Errorf("gamma should be filtered out: %q", out)
+	}
+
+	// --tag (untagged) → only gamma.
+	cmd2 := &LsCmd{All: true, Tag: []string{"(untagged)"}, Status: "all"}
+	out, _ = captureStdout(t, cmd2.Run)
+	if !strings.Contains(out, "lonely task") {
+		t.Errorf("(untagged) should match gamma: %q", out)
+	}
+	if strings.Contains(out, "buy milk") || strings.Contains(out, "ship release") {
+		t.Errorf("(untagged) should exclude tagged projects: %q", out)
+	}
+}
+
+func TestProjectsCmd_TagFilter(t *testing.T) {
+	setupDFCRoot(t)
+	captureNamed(t, "acme", "x")
+	captureNamed(t, "beta", "y")
+	_ = (&TagsAddCmd{Project: "acme", Tags: []string{"work"}}).Run()
+
+	cmd := &ProjectsCmd{Tag: []string{"work"}}
+	out, err := captureStdout(t, cmd.Run)
+	if err != nil {
+		t.Fatalf("projects --tag work: %v", err)
+	}
+	if !strings.Contains(out, "acme") {
+		t.Errorf("acme missing from --tag work: %q", out)
+	}
+	if strings.Contains(out, "beta") {
+		t.Errorf("beta should be filtered out: %q", out)
+	}
+}
+
+func TestSearchCmd_TagFilter(t *testing.T) {
+	setupDFCRoot(t)
+	captureNamed(t, "acme", "shared term")
+	captureNamed(t, "beta", "shared term")
+	_ = (&TagsAddCmd{Project: "acme", Tags: []string{"work"}}).Run()
+
+	// Use JSON so we can read the full task ID + project per hit. The
+	// human format only prints a 10-char prefix, which can collide on
+	// same-millisecond captures.
+	cmd := &SearchCmd{All: true, Tag: []string{"work"}, Query: []string{"shared"}, Status: "all", Limit: 10, Sort: "score", JSON: true}
+	out, err := captureStdout(t, cmd.Run)
+	if err != nil {
+		t.Fatalf("search --tag work: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if len(lines) != 1 {
+		t.Fatalf("expected 1 hit, got %d: %q", len(lines), out)
+	}
+	if !strings.Contains(lines[0], `"project":"acme"`) {
+		t.Errorf("hit should be from acme: %q", lines[0])
+	}
+	if strings.Contains(lines[0], `"project":"beta"`) {
+		t.Errorf("beta should be filtered out: %q", lines[0])
 	}
 }
 

@@ -36,7 +36,8 @@ func dfcRoot() (string, error) {
 // readers.
 type Entry struct {
 	Name     string    `json:"name"`
-	Tag      string    `json:"tag,omitempty"`
+	Prefix   string    `json:"prefix,omitempty"`
+	Tags     []string  `json:"tags,omitempty"`
 	LastUsed time.Time `json:"last_used,omitempty"`
 }
 
@@ -118,7 +119,7 @@ func (r *Registry) Register(slug, name string) bool {
 	if name == "" || r.nameInUse(name, slug) != "" {
 		name = slug
 	}
-	r.entries[slug] = Entry{Name: name, LastUsed: existing.LastUsed, Tag: existing.Tag}
+	r.entries[slug] = Entry{Name: name, LastUsed: existing.LastUsed, Prefix: existing.Prefix, Tags: existing.Tags}
 	return !existed
 }
 
@@ -157,15 +158,15 @@ func (r *Registry) Rename(slug, name string) error {
 	return r.Save()
 }
 
-// Tag returns the short prefix used in global-view rows. Falls back to the
-// last `-`-separated segment of the slug when no explicit tag is set, so a
-// fresh registry entry still displays something useful (e.g. slug
-// `users-maiku-projects-dfc` → tag `dfc`).
-func (r *Registry) Tag(slug string) string {
-	if e, ok := r.entries[slug]; ok && e.Tag != "" {
-		return e.Tag
+// Prefix returns the short label used in global-view rows. Falls back to
+// the last `-`-separated segment of the slug when no explicit prefix is
+// set, so a fresh registry entry still displays something useful (e.g.
+// slug `users-maiku-projects-dfc` → prefix `dfc`).
+func (r *Registry) Prefix(slug string) string {
+	if e, ok := r.entries[slug]; ok && e.Prefix != "" {
+		return e.Prefix
 	}
-	return DefaultTag(slug)
+	return DefaultPrefix(slug)
 }
 
 // Unregister removes the entry for slug and writes the registry to disk.
@@ -180,20 +181,20 @@ func (r *Registry) Unregister(slug string) error {
 	return r.Save()
 }
 
-// SetTag writes a custom tag for slug, preserving Name and LastUsed.
-// Passing "" reverts to the derived default. Errors when tag collides
-// with another slug's effective tag (case-folded).
-func (r *Registry) SetTag(slug, tag string) error {
+// SetPrefix writes a custom display prefix for slug, preserving Name and
+// LastUsed. Passing "" reverts to the derived default. Errors when the
+// prefix collides with another slug's effective prefix (case-folded).
+func (r *Registry) SetPrefix(slug, prefix string) error {
 	if !r.Has(slug) {
 		return fmt.Errorf("unknown project slug %q", slug)
 	}
-	if tag != "" {
-		if other := r.tagInUse(tag, slug); other != "" {
-			return fmt.Errorf("project tag %q already used by slug %q", tag, other)
+	if prefix != "" {
+		if other := r.prefixInUse(prefix, slug); other != "" {
+			return fmt.Errorf("project prefix %q already used by slug %q", prefix, other)
 		}
 	}
 	e := r.entries[slug]
-	e.Tag = tag
+	e.Prefix = prefix
 	r.entries[slug] = e
 	return r.Save()
 }
@@ -212,25 +213,168 @@ func (r *Registry) nameInUse(name, excludeSlug string) string {
 	return ""
 }
 
-// tagInUse returns the slug currently holding tag (case-folded), or ""
-// when no entry uses it. Compares against effective tags (custom or
-// derived) so we don't accidentally collide with another project's
+// prefixInUse returns the slug currently holding prefix (case-folded), or
+// "" when no entry uses it. Compares against effective prefixes (custom
+// or derived) so we don't accidentally collide with another project's
 // default. excludeSlug skips self-comparison.
-func (r *Registry) tagInUse(tag, excludeSlug string) string {
+func (r *Registry) prefixInUse(prefix, excludeSlug string) string {
 	for slug := range r.entries {
 		if slug == excludeSlug {
 			continue
 		}
-		if strings.EqualFold(r.Tag(slug), tag) {
+		if strings.EqualFold(r.Prefix(slug), prefix) {
 			return slug
 		}
 	}
 	return ""
 }
 
-// DefaultTag returns the last `-`-separated segment of slug, or the slug
-// itself when it has no hyphens.
-func DefaultTag(slug string) string {
+// Tags returns the categorical tag list for slug, or nil when the slug
+// is unknown or has no tags. Returned slice is a defensive copy so
+// callers can mutate it freely.
+func (r *Registry) Tags(slug string) []string {
+	e, ok := r.entries[slug]
+	if !ok || len(e.Tags) == 0 {
+		return nil
+	}
+	out := make([]string, len(e.Tags))
+	copy(out, e.Tags)
+	return out
+}
+
+// SetTags replaces slug's tag list. Input is de-duplicated case-
+// insensitively (the first occurrence's case is preserved). Empty
+// strings are dropped.
+func (r *Registry) SetTags(slug string, tags []string) error {
+	if !r.Has(slug) {
+		return fmt.Errorf("unknown project slug %q", slug)
+	}
+	e := r.entries[slug]
+	e.Tags = dedupeTagsCaseInsensitive(tags)
+	r.entries[slug] = e
+	return r.Save()
+}
+
+// AddTag appends tag to slug's tag list when not already present
+// (case-insensitive). No-op when the tag is already there.
+func (r *Registry) AddTag(slug, tag string) error {
+	if !r.Has(slug) {
+		return fmt.Errorf("unknown project slug %q", slug)
+	}
+	tag = strings.TrimSpace(tag)
+	if tag == "" {
+		return errors.New("tag cannot be empty")
+	}
+	e := r.entries[slug]
+	for _, existing := range e.Tags {
+		if strings.EqualFold(existing, tag) {
+			return nil
+		}
+	}
+	e.Tags = append(e.Tags, tag)
+	r.entries[slug] = e
+	return r.Save()
+}
+
+// RemoveTag drops tag from slug's tag list (case-insensitive). No-op
+// when the tag isn't present.
+func (r *Registry) RemoveTag(slug, tag string) error {
+	if !r.Has(slug) {
+		return fmt.Errorf("unknown project slug %q", slug)
+	}
+	e := r.entries[slug]
+	out := e.Tags[:0]
+	removed := false
+	for _, t := range e.Tags {
+		if !removed && strings.EqualFold(t, tag) {
+			removed = true
+			continue
+		}
+		out = append(out, t)
+	}
+	if !removed {
+		return nil
+	}
+	e.Tags = append([]string(nil), out...)
+	r.entries[slug] = e
+	return r.Save()
+}
+
+// TagSummary describes one tag and the projects that carry it.
+type TagSummary struct {
+	Name  string   // display form (first-seen casing across projects)
+	Slugs []string // alphabetical
+}
+
+// AllTags returns every tag in use across the registry, with its project
+// slug list. Tags are grouped case-insensitively; the display Name uses
+// the first casing encountered (slug-sorted iteration). Sorted by Name
+// case-folded ascending.
+func (r *Registry) AllTags() []TagSummary {
+	groups := map[string]*TagSummary{}
+	for _, slug := range r.Slugs() {
+		for _, t := range r.entries[slug].Tags {
+			key := strings.ToLower(t)
+			if g, ok := groups[key]; ok {
+				g.Slugs = append(g.Slugs, slug)
+				continue
+			}
+			groups[key] = &TagSummary{Name: t, Slugs: []string{slug}}
+		}
+	}
+	out := make([]TagSummary, 0, len(groups))
+	for _, g := range groups {
+		sort.Strings(g.Slugs)
+		out = append(out, *g)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name)
+	})
+	return out
+}
+
+// UntaggedSlugs returns slugs whose tag list is empty, alphabetically.
+// Used by the (untagged) filter view.
+func (r *Registry) UntaggedSlugs() []string {
+	var out []string
+	for _, slug := range r.Slugs() {
+		if len(r.entries[slug].Tags) == 0 {
+			out = append(out, slug)
+		}
+	}
+	return out
+}
+
+// dedupeTagsCaseInsensitive returns a new slice with case-insensitive
+// duplicates removed (first occurrence wins), empty strings stripped,
+// and whitespace trimmed.
+func dedupeTagsCaseInsensitive(tags []string) []string {
+	if len(tags) == 0 {
+		return nil
+	}
+	seen := make(map[string]bool, len(tags))
+	out := make([]string, 0, len(tags))
+	for _, t := range tags {
+		t = strings.TrimSpace(t)
+		if t == "" {
+			continue
+		}
+		k := strings.ToLower(t)
+		if seen[k] {
+			continue
+		}
+		seen[k] = true
+		out = append(out, t)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// DefaultPrefix returns the last `-`-separated segment of slug, or the
+// slug itself when it has no hyphens.
+func DefaultPrefix(slug string) string {
 	if slug == "" {
 		return ""
 	}

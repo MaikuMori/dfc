@@ -1,0 +1,3 @@
+kind: changed
+body: "Per-project display label is named 'prefix' (renamed from 'tag'); JSON key 'prefix', TUI editor 'ctrl+p'."
+time: 2026-05-22T16:45:36.284829-04:00

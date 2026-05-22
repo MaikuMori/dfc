@@ -103,7 +103,7 @@ func TestRegistry_TouchAutoRegisters(t *testing.T) {
 	}
 }
 
-func TestDefaultTag(t *testing.T) {
+func TestDefaultPrefix(t *testing.T) {
 	cases := map[string]string{
 		"users-maiku-projects-dfc":  "dfc",
 		"github-com-acme-widget":    "widget",
@@ -112,42 +112,42 @@ func TestDefaultTag(t *testing.T) {
 		"":                          "",
 	}
 	for in, want := range cases {
-		if got := DefaultTag(in); got != want {
-			t.Errorf("DefaultTag(%q) = %q, want %q", in, got, want)
+		if got := DefaultPrefix(in); got != want {
+			t.Errorf("DefaultPrefix(%q) = %q, want %q", in, got, want)
 		}
 	}
 }
 
-func TestRegistry_TagFallsBackToDefault(t *testing.T) {
+func TestRegistry_PrefixFallsBackToDefault(t *testing.T) {
 	dir := t.TempDir()
 	r, _ := loadRegistryFromPath(filepath.Join(dir, "projects.json"))
 	r.Register("users-x-acme", "Acme")
-	if got := r.Tag("users-x-acme"); got != "acme" {
+	if got := r.Prefix("users-x-acme"); got != "acme" {
 		t.Errorf("Tag fallback = %q, want %q", got, "acme")
 	}
 }
 
-func TestRegistry_SetTagPersists(t *testing.T) {
+func TestRegistry_SetPrefixPersists(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "projects.json")
 	r, _ := loadRegistryFromPath(path)
 	r.Register("foo", "Foo")
-	if err := r.SetTag("foo", "F"); err != nil {
+	if err := r.SetPrefix("foo", "F"); err != nil {
 		t.Fatal(err)
 	}
-	if r.Tag("foo") != "F" {
-		t.Errorf("Tag = %q after SetTag", r.Tag("foo"))
+	if r.Prefix("foo") != "F" {
+		t.Errorf("Tag = %q after SetPrefix", r.Prefix("foo"))
 	}
 	r2, _ := loadRegistryFromPath(path)
-	if r2.Tag("foo") != "F" {
-		t.Errorf("Tag = %q after reload", r2.Tag("foo"))
+	if r2.Prefix("foo") != "F" {
+		t.Errorf("Tag = %q after reload", r2.Prefix("foo"))
 	}
 	// Clearing reverts to default.
-	if err := r2.SetTag("foo", ""); err != nil {
+	if err := r2.SetPrefix("foo", ""); err != nil {
 		t.Fatal(err)
 	}
-	if r2.Tag("foo") != "foo" {
-		t.Errorf("Tag = %q after clear, want default", r2.Tag("foo"))
+	if r2.Prefix("foo") != "foo" {
+		t.Errorf("Tag = %q after clear, want default", r2.Prefix("foo"))
 	}
 }
 
@@ -233,11 +233,11 @@ func TestRegistry_UnregisterMissingIsNoOp(t *testing.T) {
 	}
 }
 
-func TestRegistry_SetTagUnknownSlugErrors(t *testing.T) {
+func TestRegistry_SetPrefixUnknownSlugErrors(t *testing.T) {
 	dir := t.TempDir()
 	r, _ := loadRegistryFromPath(filepath.Join(dir, "projects.json"))
-	if err := r.SetTag("ghost", "G"); err == nil {
-		t.Errorf("expected error on SetTag for unknown slug")
+	if err := r.SetPrefix("ghost", "G"); err == nil {
+		t.Errorf("expected error on SetPrefix for unknown slug")
 	}
 }
 
@@ -275,18 +275,18 @@ func TestRegistry_RenameRejectsCollision(t *testing.T) {
 	}
 }
 
-func TestRegistry_SetTagRejectsCollision(t *testing.T) {
+func TestRegistry_SetPrefixRejectsCollision(t *testing.T) {
 	dir := t.TempDir()
 	r, _ := loadRegistryFromPath(filepath.Join(dir, "projects.json"))
 	r.Register("alpha", "Alpha")
 	r.Register("beta", "Beta")
-	if err := r.SetTag("alpha", "shared"); err != nil {
-		t.Fatalf("first SetTag: %v", err)
+	if err := r.SetPrefix("alpha", "shared"); err != nil {
+		t.Fatalf("first SetPrefix: %v", err)
 	}
-	if err := r.SetTag("beta", "shared"); err == nil {
+	if err := r.SetPrefix("beta", "shared"); err == nil {
 		t.Errorf("expected error on tag collision")
 	}
-	if err := r.SetTag("beta", "SHARED"); err == nil {
+	if err := r.SetPrefix("beta", "SHARED"); err == nil {
 		t.Errorf("expected case-insensitive tag collision rejection")
 	}
 }
@@ -316,6 +316,137 @@ func TestRegistry_LookupSlug(t *testing.T) {
 	if err != nil || got != "" {
 		t.Errorf("miss should return empty without error: got (%q,%v)", got, err)
 	}
+}
+
+func TestRegistry_TagsSetGet(t *testing.T) {
+	dir := t.TempDir()
+	r, _ := loadRegistryFromPath(filepath.Join(dir, "projects.json"))
+	r.Register("alpha", "Alpha")
+
+	if got := r.Tags("alpha"); got != nil {
+		t.Errorf("fresh project should have nil tags, got %v", got)
+	}
+	if err := r.SetTags("alpha", []string{"work", "OSS", "work", "  client-a  ", ""}); err != nil {
+		t.Fatalf("SetTags: %v", err)
+	}
+	got := r.Tags("alpha")
+	want := []string{"work", "OSS", "client-a"}
+	if !slicesEqual(got, want) {
+		t.Errorf("Tags after SetTags = %v, want %v (dedupe + trim + drop empty)", got, want)
+	}
+	// Persistence + case-insensitive de-dupe across writes.
+	r2, _ := loadRegistryFromPath(filepath.Join(dir, "projects.json"))
+	if !slicesEqual(r2.Tags("alpha"), want) {
+		t.Errorf("Tags after reload = %v, want %v", r2.Tags("alpha"), want)
+	}
+}
+
+func TestRegistry_AddRemoveTagIdempotent(t *testing.T) {
+	dir := t.TempDir()
+	r, _ := loadRegistryFromPath(filepath.Join(dir, "projects.json"))
+	r.Register("alpha", "Alpha")
+
+	if err := r.AddTag("alpha", "work"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.AddTag("alpha", "WORK"); err != nil {
+		t.Fatalf("idempotent AddTag should be no-op, got %v", err)
+	}
+	if got := r.Tags("alpha"); !slicesEqual(got, []string{"work"}) {
+		t.Errorf("after duplicate add, tags = %v, want [work]", got)
+	}
+
+	if err := r.RemoveTag("alpha", "missing"); err != nil {
+		t.Errorf("RemoveTag of missing tag should be no-op, got %v", err)
+	}
+	if err := r.RemoveTag("alpha", "WORK"); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.Tags("alpha"); got != nil {
+		t.Errorf("after remove, tags should be nil, got %v", got)
+	}
+}
+
+func TestRegistry_AllTagsGroupsAcrossProjects(t *testing.T) {
+	dir := t.TempDir()
+	r, _ := loadRegistryFromPath(filepath.Join(dir, "projects.json"))
+	r.Register("alpha", "Alpha")
+	r.Register("beta", "Beta")
+	r.Register("gamma", "Gamma")
+
+	if err := r.SetTags("alpha", []string{"work", "oss"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.SetTags("beta", []string{"Work", "personal"}); err != nil {
+		t.Fatal(err)
+	}
+	// gamma has no tags — should appear in UntaggedSlugs.
+
+	summary := r.AllTags()
+	// Expect three groups: oss (alpha), personal (beta), work (alpha+beta).
+	if len(summary) != 3 {
+		t.Fatalf("AllTags len = %d, want 3 (got %+v)", len(summary), summary)
+	}
+	byName := map[string]TagSummary{}
+	for _, s := range summary {
+		byName[strings.ToLower(s.Name)] = s
+	}
+	if got := byName["work"].Slugs; !slicesEqual(got, []string{"alpha", "beta"}) {
+		t.Errorf("work slugs = %v, want [alpha beta]", got)
+	}
+	if got := byName["oss"].Slugs; !slicesEqual(got, []string{"alpha"}) {
+		t.Errorf("oss slugs = %v", got)
+	}
+	if got := byName["personal"].Slugs; !slicesEqual(got, []string{"beta"}) {
+		t.Errorf("personal slugs = %v", got)
+	}
+	if got := r.UntaggedSlugs(); !slicesEqual(got, []string{"gamma"}) {
+		t.Errorf("UntaggedSlugs = %v, want [gamma]", got)
+	}
+}
+
+func TestRegistry_TagsReturnsDefensiveCopy(t *testing.T) {
+	dir := t.TempDir()
+	r, _ := loadRegistryFromPath(filepath.Join(dir, "projects.json"))
+	r.Register("alpha", "Alpha")
+	if err := r.SetTags("alpha", []string{"work", "oss"}); err != nil {
+		t.Fatal(err)
+	}
+	got := r.Tags("alpha")
+	got[0] = "MUTATED"
+	_ = append(got, "leaked") //nolint:ineffassign // verifying that appending to the returned slice doesn't leak into the registry
+
+	// Original data should be untouched.
+	again := r.Tags("alpha")
+	if !slicesEqual(again, []string{"work", "oss"}) {
+		t.Errorf("Tags should return a defensive copy; saw mutation leak: %v", again)
+	}
+}
+
+func TestRegistry_TagsOnUnknownSlugErrors(t *testing.T) {
+	dir := t.TempDir()
+	r, _ := loadRegistryFromPath(filepath.Join(dir, "projects.json"))
+	if err := r.SetTags("ghost", []string{"work"}); err == nil {
+		t.Errorf("SetTags on unknown slug should error")
+	}
+	if err := r.AddTag("ghost", "work"); err == nil {
+		t.Errorf("AddTag on unknown slug should error")
+	}
+	if err := r.RemoveTag("ghost", "work"); err == nil {
+		t.Errorf("RemoveTag on unknown slug should error")
+	}
+}
+
+func slicesEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func TestRegistry_Slugs(t *testing.T) {

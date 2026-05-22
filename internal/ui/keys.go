@@ -26,8 +26,13 @@ type keyMap struct {
 	SearchClear      key.Binding
 	Switch           key.Binding
 	Sort             key.Binding
+	Filter           key.Binding
+	PickerEditTags   key.Binding
+	PickerToggleTag  key.Binding
+	PickerNewTag     key.Binding
+	PickerClearTags  key.Binding
 	PickerRename     key.Binding
-	PickerSetTag     key.Binding
+	PickerSetPrefix  key.Binding
 	PickerDelete     key.Binding
 	Global           key.Binding
 	Help             key.Binding
@@ -57,10 +62,15 @@ var keys = keyMap{
 	SearchCommit: key.NewBinding(key.WithKeys("enter"), key.WithHelp("↵", "apply")),
 	SearchClear:  key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "clear")),
 
-	Switch:       key.NewBinding(key.WithKeys("P"), key.WithHelp("P", "switch")),
-	Sort:         key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "sort: modified/created")),
+	Switch:          key.NewBinding(key.WithKeys("P"), key.WithHelp("P", "switch")),
+	Sort:            key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "sort: modified/created")),
+	Filter:          key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "filter by tag")),
+	PickerEditTags:  key.NewBinding(key.WithKeys("ctrl+t"), key.WithHelp("^t", "edit tags")),
+	PickerToggleTag: key.NewBinding(key.WithKeys(" "), key.WithHelp("␣", "toggle")),
+	PickerNewTag:    key.NewBinding(key.WithKeys("ctrl+n"), key.WithHelp("^n", "new tag")),
+	PickerClearTags: key.NewBinding(key.WithKeys("ctrl+l"), key.WithHelp("^l", "clear")),
 	PickerRename: key.NewBinding(key.WithKeys("ctrl+r"), key.WithHelp("^r", "rename")),
-	PickerSetTag: key.NewBinding(key.WithKeys("ctrl+t"), key.WithHelp("^t", "set tag")),
+	PickerSetPrefix: key.NewBinding(key.WithKeys("ctrl+p"), key.WithHelp("^p", "set prefix")),
 	PickerDelete: key.NewBinding(key.WithKeys("ctrl+shift+d"), key.WithHelp("^⇧d", "delete project")),
 	Global:       key.NewBinding(key.WithKeys("A"), key.WithHelp("A", "all")),
 
@@ -73,7 +83,7 @@ var keys = keyMap{
 // ShortHelp drives the always-visible footer hint. Keep it to the keys a
 // user reaches for several times a minute.
 func (k keyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Capture, k.Search, k.Toggle, k.Global, k.Help, k.Quit}
+	return []key.Binding{k.Capture, k.Search, k.Toggle, k.Global, k.Filter, k.Help, k.Quit}
 }
 
 // FullHelp drives the `?` overlay. Rows group related actions; columns
@@ -83,7 +93,7 @@ func (k keyMap) FullHelp() [][]key.Binding {
 		{k.Up, k.Down, k.PageUp, k.PageDn, k.Top, k.Bottom, k.Expand},
 		{k.Capture, k.NewlineInCapture, k.Edit, k.EditExt, k.Toggle, k.Delete, k.Undo},
 		{k.Search, k.SearchCommit, k.SearchClear},
-		{k.Switch, k.PickerRename, k.PickerSetTag, k.PickerDelete, k.Global, k.Sort},
+		{k.Switch, k.PickerRename, k.PickerSetPrefix, k.PickerDelete, k.Global, k.Sort, k.Filter},
 		{k.Help, k.Quit},
 	}
 }
@@ -109,11 +119,19 @@ func (k keyMap) FilterHints() []key.Binding {
 }
 
 func (k keyMap) SwitchPickerHints() []key.Binding {
-	return []key.Binding{k.Confirm, k.PickerRename, k.PickerSetTag, k.PickerDelete, k.Cancel}
+	return []key.Binding{k.Confirm, k.PickerRename, k.PickerSetPrefix, k.PickerEditTags, k.PickerDelete, k.Cancel}
 }
 
 func (k keyMap) CaptureTargetHints() []key.Binding {
 	return []key.Binding{k.Confirm, k.Cancel}
+}
+
+func (k keyMap) TagEditHints() []key.Binding {
+	return []key.Binding{k.PickerToggleTag, k.PickerNewTag, k.PickerClearTags, k.Confirm, k.Cancel}
+}
+
+func (k keyMap) TagFilterHints() []key.Binding {
+	return []key.Binding{k.PickerToggleTag, k.PickerClearTags, k.Confirm, k.Cancel}
 }
 
 // joinBindings renders the given bindings as a one-line "k  desc · k desc"

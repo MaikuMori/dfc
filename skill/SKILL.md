@@ -41,29 +41,35 @@ Interactive only (requires a TTY). Discovers any project dir under `~/.dfc/proje
 ### `dfc ls` / `dfc list` — list tasks
 
 ```
-dfc ls [-p <slug> | -a] [--status open|done|all] [--json]
+dfc ls [-p <slug-or-name> | -a] [--tag <name>]... [--status open|done|all]
+       [--sort modified|created] [--json]
 ```
 
-- `-p, --project <slug>`: list one project (defaults to cwd).
+- `-p, --project <slug-or-name>`: list one project (defaults to cwd). Accepts a slug or display name (case-insensitive).
 - `-a, --all`: merge every registered project. Mutually exclusive with `-p`.
+- `--tag <name>`: filter to projects carrying this tag. Repeatable or comma-separated; OR semantics. `(untagged)` matches projects with no tags.
 - `--status`: `open`, `done`, or `all` (default `all`).
+- `--sort`: `modified` (default — file mtime) or `created` (frontmatter timestamp). Newest-first.
 - `--json`: NDJSON, one `TaskOut` per line.
 
-Human format: `<26-char ULID>  <○|✓>  [<tag>] <description>` (tag only in `-a` mode).
+Human format: `<26-char ULID>  <○|✓>  [<prefix>] <description>` (prefix only in `-a` mode).
 
 ### `dfc s` / `dfc search` — full-text search (cwd-local by default)
 
 ### `dfc ss` — full-text search across every project
 
 ```
-dfc s  <query>... [-p <slug>] [-a] [--status ...] [-n 20] [--sort score|modified] [--json] [--reindex]
-dfc ss <query>... [-p <slug>]      [--status ...] [-n 20] [--sort score|modified] [--json] [--reindex]
+dfc s  <query>... [-p <slug-or-name>] [-a] [--tag <name>]... [--status ...] [-n 20]
+                  [--sort score|modified|created] [--json] [--reindex]
+dfc ss <query>... [-p <slug-or-name>]      [--tag <name>]... [--status ...] [-n 20]
+                  [--sort score|modified|created] [--json] [--reindex]
 ```
 
 - Query language: bare words are AND-ed and prefix-matched (`mac` → matches `macos`). Quoted `"exact phrase"` is exact. `-word` negates. `description:foo` / `details:bar` scope to a field.
-- `-p` wins over `-a`/scope defaults.
+- `-p` wins over `-a`/scope defaults. Accepts slug or display name (case-insensitive).
+- `--tag <name>`: restrict to projects carrying this tag. Repeatable or comma-separated; OR semantics.
 - `-n, --limit`: cap hits (default 20).
-- `--sort`: `score` (default, BM25) or `modified` (newest first).
+- `--sort`: `score` (default, BM25), `modified` (file mtime), or `created` (frontmatter timestamp).
 - `--json`: NDJSON `{task: TaskOut, score, snippet}` per line.
 - `--reindex`: drop & rebuild the index from disk before querying. Use only if results seem stale.
 
@@ -72,14 +78,14 @@ Human output groups by project when hits span >1 project. Description is bolded 
 ### `dfc show <26-char ULID>` — print one task
 
 ```
-dfc show <26-char ULID> [--json]
+dfc show <26-char ULID> [-a|--all-projects] [--json]
 ```
 
 ### `dfc done <26-char ULID>` / `dfc reopen <26-char ULID>` — toggle status
 
 ```
-dfc done   <26-char ULID> [--json]
-dfc reopen <26-char ULID> [--json]
+dfc done   <26-char ULID> [-a|--all-projects] [--json]
+dfc reopen <26-char ULID> [-a|--all-projects] [--json]
 ```
 
 No-op when already in the target state (returns the row unchanged).
@@ -87,7 +93,8 @@ No-op when already in the target state (returns the row unchanged).
 ### `dfc edit <26-char ULID>` — rewrite description and/or details
 
 ```
-dfc edit <26-char ULID> [--description <text>] [-d <body>|--details <body>|-] [--json]
+dfc edit <26-char ULID> [--description <text>] [-d <body>|--details <body>|-]
+                        [-a|--all-projects] [--json]
 ```
 
 - `--description <text>`: rewrite the H1 heading and rename the on-disk file to match. No short flag.
@@ -107,10 +114,12 @@ Reserve `dfc edit` itself for: wholesale body rewrites (you intend to replace ev
 ### `dfc rm <26-char ULID>` — soft-delete a task
 
 ```
-dfc rm <26-char ULID> [--json]
+dfc rm <26-char ULID> [-a|--all-projects] [--json]
 ```
 
 Moves the task to `~/.dfc/trash/` (recoverable via `dfc undo` until the TTL sweep gets it). `--json` returns a `RmOut` with the trash entry id.
+
+**ID-lookup scope for `show / done / reopen / edit / rm`**: by default the ULID is looked up only inside the cwd-resolved project; pass `-a` / `--all-projects` to search every project. Off-project IDs without `-a` error with a `pass --all-projects` hint.
 
 ### `dfc undo` — restore the most recently trashed entry
 
@@ -133,10 +142,26 @@ dfc trash empty
 ### `dfc projects` — list registered projects
 
 ```
-dfc projects [--json]
+dfc projects [--tag <name>]... [--json]
 ```
 
-Ordered by recency (last-used desc, then slug asc).
+Ordered by recency (last-used desc, then slug asc). `--tag` filters to projects carrying that tag (repeatable / comma-separated, OR semantics; `(untagged)` for projects with none).
+
+### `dfc tags` — manage project categorical tags
+
+```
+dfc tags                                        # show cwd project's tags (alias: tags show)
+dfc tags show [-p <slug-or-name>] [--json]
+dfc tags add  [-p <slug-or-name>] <tag>...      # append (idempotent)
+dfc tags rm   [-p <slug-or-name>] <tag>...      # remove (case-insensitive)
+dfc tags set  [-p <slug-or-name>] <tag>...      # replace full list (empty list clears)
+dfc tags ls   [--json]                          # every distinct tag with project counts
+```
+
+- Default target is the cwd-resolved project; `--project/-p` overrides (slug or display name, case-insensitive).
+- Tag args accept comma-separated *or* repeated values: `dfc tags add work,oss` ≡ `dfc tags add work oss`.
+- Tag names are stored case-preserving but compared case-insensitively. Many-to-many across projects (a tag like `work` lives on every project you tag with it; the registry stores it once per project).
+- `tags show` / `tags add` / `tags rm` / `tags set` emit `{slug, tags}` with `--json`. `tags ls` emits one `{name, projects}` object per tag (NDJSON).
 
 ### `dfc project` — print the project resolved from cwd
 
@@ -176,13 +201,14 @@ Bubbletea TUI. Requires a TTY. Press `?` inside for a key reference. Not invoked
 {
   "slug": "github-com-acme-widget",
   "name": "Acme Widget",
-  "tag": "widget",
+  "prefix": "widget",
+  "tags": ["work", "client-a"],
   "last_used": "2026-05-14T20:46:44Z",
   "source": "git-remote",
   "raw": "github.com/acme/widget"
 }
 ```
-`source` and `raw` only present in `project` output.
+`source` and `raw` only present in `project` output. `tags` and `prefix` may be omitted when empty.
 
 `RmOut` (rm):
 ```json
@@ -192,7 +218,7 @@ Bubbletea TUI. Requires a TTY. Press `?` inside for a key reference. Not invoked
 ## Filesystem layout
 
 - `~/.dfc/projects/<slug>/<10-char-ts>-<desc-slug>.md` — one file per task.
-- `~/.dfc/projects.json` — project registry (name, tag, last_used).
+- `~/.dfc/projects.json` — project registry (name, prefix, tags, last_used).
 - `~/.dfc/index.db` — SQLite FTS5 search index (write-through, rebuildable via `--reindex`).
 - `~/.dfc/trash/<ulid>/` — soft-deleted tasks and projects, swept on a TTL.
 - Override the root with `DFC_ROOT=/path` (tests, scratch environments).
@@ -224,8 +250,17 @@ Optional details body.
 - **List open tasks across everything:**
   `dfc ls -a --status open`
 
+- **List open tasks across the "work" projects only:**
+  `dfc ls -a --status open --tag work`
+
+- **Tag the current project as work + oss:**
+  `dfc tags add work oss`
+
 - **Find tasks mentioning a phrase across every project:**
   `dfc ss "session token"`
+
+- **Search scoped to a tag group:**
+  `dfc ss "migration" --tag work`
 
 - **Find tasks in the current project, JSON for further parsing:**
   `dfc s migration --json`
@@ -239,8 +274,10 @@ Optional details body.
 ## Gotchas
 
 - **IDs are full 26-char ULIDs.** Search output shows a dim 10-char prefix; `--json` gives the full ID. `done`, `reopen`, `edit`, `rm`, `show` require the full 26 chars.
+- **ID lookup is cwd-scoped by default.** `done / reopen / edit / rm / show` look up the ULID only inside the cwd-resolved project; pass `-a` / `--all-projects` to search every project. Errors include a hint if you forget.
 - **`dfc c` with no description and no TTY errors out.** In agent contexts always pass a description (or `-` for stdin).
 - **`-a` and `-p` are mutually exclusive** on `ls`.
+- **`-p` accepts slug or display name** (case-insensitive). `dfc ls -p "MaikuMori/auto"` and `dfc ls -p github-com-maikumori-auto` are equivalent.
 - **Search index lag.** Write-through keeps it fresh on every mutation, but an external editor that bypasses the CLI can drift. Either let `EnsureFresh` catch it on the next query (automatic) or force with `--reindex`.
 - **Prefer direct file edits for partial changes.** `dfc edit --details` replaces the whole body; for adding a paragraph or fixing a typo, get the path from `dfc show --json` and Edit the markdown directly. See the `dfc edit` section for details.
 - **Status enum** is exactly `open` | `done`. There is no in-progress / cancelled.

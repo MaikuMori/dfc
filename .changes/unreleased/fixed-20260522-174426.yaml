@@ -1,0 +1,3 @@
+kind: fixed
+body: "TUI: closing a picker no longer leaves the task list with a single row stranded at the top; the viewport offset is clamped to content."
+time: 2026-05-22T17:44:26.931913-04:00

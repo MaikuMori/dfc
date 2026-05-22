@@ -1,0 +1,3 @@
+kind: added
+body: "'dfc tags' manages project tags. Subcommands: show / add / rm / set / ls. Default target is the cwd-resolved project; '--project/-p' overrides. Tag args accept comma-separated or repeated values."
+time: 2026-05-22T17:03:57.532293-04:00

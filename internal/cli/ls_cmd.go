@@ -15,11 +15,12 @@ import (
 // project; -a/--all merges every registered project. --status filters by
 // open/done. --json switches the human one-line format to NDJSON.
 type LsCmd struct {
-	Project string `name:"project" short:"p" predictor:"project" help:"List tasks for this project slug (defaults to cwd)."`
-	All     bool   `name:"all" short:"a" help:"List tasks from every registered project."`
-	Status  string `name:"status" enum:"open,done,all" default:"all" help:"Filter by status."`
-	Sort    string `name:"sort" enum:"modified,created" default:"modified" help:"Order by modification time or creation time."`
-	JSON    bool   `name:"json" help:"Emit one JSON object per line (NDJSON)."`
+	Project string   `name:"project" short:"p" predictor:"project" help:"List tasks for this project slug (defaults to cwd)."`
+	All     bool     `name:"all" short:"a" help:"List tasks from every registered project."`
+	Tag     []string `name:"tag" predictor:"tag" help:"Filter to projects carrying this tag. Repeatable / comma-separated. '(untagged)' matches projects with no tags."`
+	Status  string   `name:"status" enum:"open,done,all" default:"all" help:"Filter by status."`
+	Sort    string   `name:"sort" enum:"modified,created" default:"modified" help:"Order by modification time or creation time."`
+	JSON    bool     `name:"json" help:"Emit one JSON object per line (NDJSON)."`
 }
 
 func (c *LsCmd) Run() error {
@@ -43,8 +44,8 @@ func (c *LsCmd) Run() error {
 		}
 	default:
 		slug := c.Project
-		switch {
-		case slug == "":
+		switch slug {
+		case "":
 			cwd, err := os.Getwd()
 			if err != nil {
 				return err
@@ -81,6 +82,20 @@ func (c *LsCmd) Run() error {
 		tasks = filtered
 	}
 
+	// Filter by project tag. Only meaningful in -a mode; in single-
+	// project mode the result is either all-or-nothing, but the flag
+	// still composes (e.g. `dfc ls -p acme --tag work` filters acme's
+	// tasks if acme is tagged work, else empty).
+	if tagFilter := expandCommaTagFilter(c.Tag); len(tagFilter) > 0 {
+		filtered := tasks[:0]
+		for _, t := range tasks {
+			if matchesTagFilter(reg, t.ProjectSlug, tagFilter) {
+				filtered = append(filtered, t)
+			}
+		}
+		tasks = filtered
+	}
+
 	// Newest first by the chosen timestamp. Stable so equal stamps preserve
 	// relative order.
 	sort.SliceStable(tasks, func(i, j int) bool {
@@ -106,26 +121,26 @@ func (c *LsCmd) Run() error {
 
 	w := os.Stdout
 	for _, t := range tasks {
-		if _, err := fmt.Fprintf(w, "%s  %s  %s%s\n", t.ID, statusGlyph(t.Status), tagPrefix(reg, t, c.All), t.Description); err != nil {
+		if _, err := fmt.Fprintf(w, "%s  %s  %s%s\n", t.ID, statusGlyph(t.Status), projectPrefix(reg, t, c.All), t.Description); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// tagPrefix returns "" in single-project mode, otherwise `[tag] ` so callers
+// projectPrefix returns "" in single-project mode, otherwise `[prefix] ` so callers
 // can tell rows from different projects apart in the merged view.
-func tagPrefix(reg *project.Registry, t storage.Task, allProjects bool) string {
+func projectPrefix(reg *project.Registry, t storage.Task, allProjects bool) string {
 	if !allProjects {
 		return ""
 	}
-	tag := reg.Tag(t.ProjectSlug)
-	if tag == "" {
-		tag = t.ProjectSlug
+	prefix := reg.Prefix(t.ProjectSlug)
+	if prefix == "" {
+		prefix = t.ProjectSlug
 	}
 	var b strings.Builder
 	b.WriteByte('[')
-	b.WriteString(tag)
+	b.WriteString(prefix)
 	b.WriteString("] ")
 	return b.String()
 }

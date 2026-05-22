@@ -42,7 +42,7 @@ func (g *GlobalCaptureCmd) Run() error {
 		// Picking from a list of one isn't a choice; jump straight to capture.
 		slug = items[0].Slug
 	} else {
-		picked, ok, err := ui.Pick("capture to:", items, reg.Rename, reg.SetTag)
+		picked, ok, err := ui.Pick("capture to:", items, reg.Rename, reg.SetPrefix)
 		if err != nil {
 			return err
 		}

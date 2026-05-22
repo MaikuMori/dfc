@@ -194,6 +194,14 @@ func (m *Model) followCursor() {
 		m.viewport.SetYOffset(0)
 		return
 	}
+	// Clamp a stale YOffset against the new content bounds. Without this,
+	// a viewport that briefly shrank (e.g. while a picker was open) and
+	// then regrew can leave the visible window scrolled past the end of
+	// content — the cursor row sticks at the visual top with empty space
+	// below it.
+	if maxOffset := total - m.viewport.Height(); m.viewport.YOffset() > maxOffset {
+		m.viewport.SetYOffset(maxOffset)
+	}
 	// Visual line at which the cursor task starts.
 	cursorTop := 0
 	for i := 0; i < m.cursor; i++ {

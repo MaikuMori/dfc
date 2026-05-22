@@ -13,7 +13,7 @@ import (
 const timestampLayout = "2006-01-02 15:04:05 MST"
 
 // ShowCmd prints a single task by full ULID. Defaults to the cwd
-// project; `--all-projects` searches every project (today's behaviour).
+// project; `--all-projects` searches every project (today's behavior).
 type ShowCmd struct {
 	JSON        bool   `name:"json" help:"Emit the task as a single JSON object."`
 	AllProjects bool   `name:"all-projects" short:"a" help:"Search every project for this ID (default: only the cwd project)."`

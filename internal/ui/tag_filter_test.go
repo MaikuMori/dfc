@@ -1,0 +1,158 @@
+package ui
+
+import (
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/MaikuMori/dfc/internal/core"
+	"github.com/MaikuMori/dfc/internal/storage"
+)
+
+// newTagModel boots a Model under a fresh DFC_ROOT, seeds three
+// projects, and returns the model ready to drive the global-view +
+// tag-filter logic without touching bubbletea's program lifecycle.
+func newTagModel(t *testing.T) Model {
+	t.Helper()
+	root := t.TempDir()
+	t.Setenv(storage.EnvRoot, root)
+
+	cr, err := core.Open(core.Options{Warn: func(string, error) {}})
+	if err != nil {
+		t.Fatalf("core.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = cr.Close() })
+
+	for _, p := range []struct{ slug, desc string }{
+		{"acme", "buy milk"},
+		{"beta", "ship release"},
+		{"gamma", "lonely task"},
+	} {
+		if _, err := cr.Capture(core.CaptureInput{Slug: p.slug, Description: p.desc, DisplayName: p.slug}); err != nil {
+			t.Fatalf("Capture(%s): %v", p.slug, err)
+		}
+	}
+	if err := cr.Registry().SetTags("acme", []string{"work"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cr.Registry().SetTags("beta", []string{"work", "personal"}); err != nil {
+		t.Fatal(err)
+	}
+	// gamma stays untagged.
+
+	store, err := cr.StoreFor("acme")
+	if err != nil {
+		t.Fatal(err)
+	}
+	all, _ := cr.ListAll()
+	m := New(cr, "acme", store, all, nil)
+	m.globalView = true
+	m.width = 80
+	m.height = 24
+	m.relayout()
+	return m
+}
+
+func TestTagFilterMatchesParityWithCLI(t *testing.T) {
+	root := t.TempDir()
+	regPath := filepath.Join(root, "projects.json")
+	t.Setenv(storage.EnvRoot, root)
+
+	cr, err := core.Open(core.Options{Warn: func(string, error) {}})
+	if err != nil {
+		t.Fatalf("core.Open: %v", err)
+	}
+	defer func() { _ = cr.Close() }()
+	if _, err := cr.Capture(core.CaptureInput{Slug: "alpha", Description: "x", DisplayName: "Alpha"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cr.Registry().SetTags("alpha", []string{"work", "oss"}); err != nil {
+		t.Fatal(err)
+	}
+	_ = regPath
+
+	cases := []struct {
+		filter []string
+		want   bool
+	}{
+		{nil, true},
+		{[]string{"work"}, true},
+		{[]string{"WORK"}, true},
+		{[]string{"missing"}, false},
+		{[]string{"(untagged)"}, false},
+	}
+	for _, tc := range cases {
+		if got := tagFilterMatches(cr.Registry(), "alpha", tc.filter); got != tc.want {
+			t.Errorf("filter=%v: got %v want %v", tc.filter, got, tc.want)
+		}
+	}
+}
+
+func TestModel_ReloadAllAppliesTagFilter(t *testing.T) {
+	m := newTagModel(t)
+	if len(m.tasks) != 3 {
+		t.Fatalf("seed sanity: expected 3 tasks in global view, got %d", len(m.tasks))
+	}
+
+	m.tagFilter = []string{"work"}
+	m = m.reloadAll()
+	if len(m.tasks) != 2 {
+		t.Errorf("--tag work should yield 2 tasks (acme+beta), got %d", len(m.tasks))
+	}
+
+	m.tagFilter = []string{"(untagged)"}
+	m = m.reloadAll()
+	if len(m.tasks) != 1 {
+		t.Errorf("(untagged) should yield 1 task (gamma), got %d", len(m.tasks))
+	}
+
+	m.tagFilter = nil
+	m = m.reloadAll()
+	if len(m.tasks) != 3 {
+		t.Errorf("empty filter should restore all 3 tasks, got %d", len(m.tasks))
+	}
+}
+
+func TestModel_HeaderShowsLivePreviewCount(t *testing.T) {
+	m := newTagModel(t)
+	// Open the tag-filter picker the same way the f-key path does.
+	m.picker = newTagFilterPicker(m.core.Registry(), nil)
+	m.picker.SetWidth(m.width)
+	m.mode = modeTagFilter
+
+	// Before any selection: header should still report the full count (3).
+	if got := m.header(); !strings.Contains(got,"all (3)") {
+		t.Errorf("pre-select header should show all (3), got %q", got)
+	}
+
+	// Simulate selecting "work" by mutating the picker's chosen set
+	// directly (the public path is space-toggle, but we bypass to keep
+	// the test focused on the header math).
+	m.picker.PreselectMany([]string{"work"})
+	if got := m.header(); !strings.Contains(got,"all (2)") {
+		t.Errorf("after selecting 'work', header should show all (2), got %q", got)
+	}
+	if got := m.header(); !strings.Contains(got,"filter: [work]") {
+		t.Errorf("header should advertise the in-flight filter: %q", got)
+	}
+
+	// Switch to (untagged) only.
+	m.picker.PreselectMany([]string{"(untagged)"})
+	if got := m.header(); !strings.Contains(got,"all (1)") {
+		t.Errorf("(untagged) projection should yield 1 task, got %q", got)
+	}
+}
+
+func TestModel_HeaderPostCommitCount(t *testing.T) {
+	m := newTagModel(t)
+	// Mimic updateTagFilter's commit branch.
+	m.tagFilter = []string{"work"}
+	m = m.reloadAll()
+	if got := m.header(); !strings.Contains(got,"all (2)") {
+		t.Errorf("post-commit header should show filtered count: %q", got)
+	}
+	if got := m.header(); !strings.Contains(got,"filter: [work]") {
+		t.Errorf("post-commit header should advertise the filter: %q", got)
+	}
+}
+

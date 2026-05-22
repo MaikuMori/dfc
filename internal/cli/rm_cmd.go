@@ -6,7 +6,7 @@ import (
 )
 
 // RmCmd removes a task by full ULID. Defaults to the cwd project;
-// `--all-projects` searches every project (today's behaviour).
+// `--all-projects` searches every project (today's behavior).
 type RmCmd struct {
 	JSON        bool   `name:"json" help:"Emit the removed task's id/project/path as a single JSON object."`
 	AllProjects bool   `name:"all-projects" short:"a" help:"Search every project for this ID (default: only the cwd project)."`

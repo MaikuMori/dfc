@@ -49,13 +49,13 @@ func buildRows(m Model, width int) (rows []string, heights []int) {
 	rows = make([]string, len(m.tasks))
 	heights = make([]int, len(m.tasks))
 	for i, t := range m.tasks {
-		tag := projectTag(m, t)
+		prefix := projectPrefix(m, t)
 		var row string
 		if m.expandedID != "" && t.ID == m.expandedID &&
 			(!m.globalView || t.ProjectSlug == m.expandedSlug) {
-			row = renderTaskMarkdown(t, tag, width)
+			row = renderTaskMarkdown(t, prefix, width)
 		} else {
-			row = renderRow(t, tag, i == m.cursor, width, flatDone)
+			row = renderRow(t, prefix, i == m.cursor, width, flatDone)
 		}
 		rows[i] = row
 		heights[i] = strings.Count(row, "\n") + 1
@@ -63,24 +63,24 @@ func buildRows(m Model, width int) (rows []string, heights []int) {
 	return rows, heights
 }
 
-// tagMaxLen caps the rendered `[project]` width so a chatty project name
+// prefixMaxLen caps the rendered `[project]` width so a chatty project name
 // can't eat the row.
-const tagMaxLen = 14
+const prefixMaxLen = 14
 
-// projectTag returns the raw (un-styled) tag text for t under the current
-// view. Empty in per-project view. Tag content comes from the registry's
-// Tag(slug) which falls back to the last `-`-separated slug segment when
-// nothing custom has been set.
-func projectTag(m Model, t storage.Task) string {
+// projectPrefix returns the raw (un-styled) prefix text for t under the
+// current view. Empty in per-project view. Content comes from the
+// registry's Prefix(slug) which falls back to the last `-`-separated
+// slug segment when nothing custom has been set.
+func projectPrefix(m Model, t storage.Task) string {
 	if !m.globalView {
 		return ""
 	}
 	name := t.ProjectSlug
 	if m.core != nil {
-		name = m.core.Registry().Tag(t.ProjectSlug)
+		name = m.core.Registry().Prefix(t.ProjectSlug)
 	}
-	if len(name) > tagMaxLen-2 {
-		name = name[:tagMaxLen-3] + "…"
+	if len(name) > prefixMaxLen-2 {
+		name = name[:prefixMaxLen-3] + "…"
 	}
 	return "[" + name + "] "
 }
@@ -90,15 +90,15 @@ func projectTag(m Model, t storage.Task) string {
 // flatDone collapses done-vs-open styling: the row paints in the open
 // style with just the ✓ glyph swapped in for the ○. Used during search so
 // matching done tasks are as easy to scan as open ones.
-func renderRow(t storage.Task, tag string, cursor bool, width int, flatDone bool) string {
+func renderRow(t storage.Task, prefix string, cursor bool, width int, flatDone bool) string {
 	icon := iconOpen
 	if t.Status == storage.StatusDone {
 		icon = iconDone
 	}
 
 	const iconWidth = 2 // "○ " or "✓ "
-	indent := strings.Repeat(" ", iconWidth+len(tag))
-	wrapWidth := width - iconWidth - len(tag)
+	indent := strings.Repeat(" ", iconWidth+len(prefix))
+	wrapWidth := width - iconWidth - len(prefix)
 	if wrapWidth < 1 {
 		wrapWidth = 1
 	}
@@ -118,8 +118,8 @@ func renderRow(t storage.Task, tag string, cursor bool, width int, flatDone bool
 			iconStyled = styleDoneIcon.Render(icon) + styleOpen.Render(" ")
 		}
 		first := iconStyled
-		if tag != "" {
-			first += styleHint.Render(tag)
+		if prefix != "" {
+			first += styleHint.Render(prefix)
 		}
 		first += styleOpen.Render(lines[0])
 		rest := make([]string, len(lines))
@@ -134,10 +134,10 @@ func renderRow(t storage.Task, tag string, cursor bool, width int, flatDone bool
 		return rendered
 	}
 
-	// Everything else: raw tag in the text, single outer style.
+	// Everything else: raw prefix in the text, single outer style.
 	for i, line := range lines {
 		if i == 0 {
-			lines[i] = icon + " " + tag + line
+			lines[i] = icon + " " + prefix + line
 		} else {
 			lines[i] = indent + line
 		}
@@ -170,34 +170,34 @@ func renderRow(t storage.Task, tag string, cursor bool, width int, flatDone bool
 // flush with the collapsed rows, then the rendered block flows below
 // indented to align with the title text — so tab feels like the same row
 // gaining markdown styling instead of a jumping layout. In global view,
-// the project tag goes between icon and title on the first rendered line
+// the project prefix goes between icon and title on the first rendered line
 // so the row's ownership stays visible while expanded.
-func renderTaskMarkdown(t storage.Task, tag string, width int) string {
+func renderTaskMarkdown(t storage.Task, prefix string, width int) string {
 	const iconWidth = 2 // "○ " or "✓ "
 
-	mdWidth := width - iconWidth - len(tag)
+	mdWidth := width - iconWidth - len(prefix)
 	// Below the markdown renderer's minimum useful width the expanded
 	// view would overflow the terminal; fall back to the collapsed row
 	// so a tiny screen stays legible.
 	if mdWidth < 20 {
-		return renderRow(t, tag, false, width, false)
+		return renderRow(t, prefix, false, width, false)
 	}
 	rendered := cachedMarkdown(t, mdWidth)
 	if rendered == "" {
-		return renderRow(t, tag, false, width, false)
+		return renderRow(t, prefix, false, width, false)
 	}
 
 	icon := iconOpen
 	if t.Status == storage.StatusDone {
 		icon = iconDone
 	}
-	indent := strings.Repeat(" ", iconWidth+len(tag))
+	indent := strings.Repeat(" ", iconWidth+len(prefix))
 	lines := strings.Split(rendered, "\n")
 	firstSet := false
 	for i, line := range lines {
 		if !firstSet && strings.TrimSpace(line) != "" {
-			if tag != "" {
-				lines[i] = icon + " " + styleHint.Render(tag) + line
+			if prefix != "" {
+				lines[i] = icon + " " + styleHint.Render(prefix) + line
 			} else {
 				lines[i] = icon + " " + line
 			}

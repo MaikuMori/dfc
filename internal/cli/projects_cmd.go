@@ -12,7 +12,8 @@ import (
 // ProjectsCmd lists every project in the registry, ordered by recency
 // (most-recently-used first; never-used entries sorted by name).
 type ProjectsCmd struct {
-	JSON bool `name:"json" help:"Emit one JSON object per project (NDJSON)."`
+	Tag  []string `name:"tag" predictor:"tag" help:"Filter to projects carrying this tag. Repeatable / comma-separated."`
+	JSON bool     `name:"json" help:"Emit one JSON object per project (NDJSON)."`
 }
 
 func (c *ProjectsCmd) Run() error {
@@ -24,7 +25,8 @@ func (c *ProjectsCmd) Run() error {
 	reg := cr.Registry()
 	counts := cr.CountsByProject()
 
-	slugs := reg.Slugs()
+	tagFilter := expandCommaTagFilter(c.Tag)
+	slugs := projectSlugsMatchingTags(reg, tagFilter)
 	// Sort by LastUsed desc, slug asc.
 	sortSlugsByRecency(reg, slugs)
 
@@ -41,7 +43,7 @@ func (c *ProjectsCmd) Run() error {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	for _, s := range slugs {
 		c := counts[s]
-		_, _ = fmt.Fprintf(w, "%s\t[%s]\t%s\t%d open · %d done\n", s, reg.Tag(s), reg.Name(s), c.Open, c.Done)
+		_, _ = fmt.Fprintf(w, "%s\t[%s]\t%s\t%d open · %d done\n", s, reg.Prefix(s), reg.Name(s), c.Open, c.Done)
 	}
 	return w.Flush()
 }
@@ -84,7 +86,7 @@ func (c *ProjectCmd) Run() error {
 
 	fmt.Printf("slug:    %s\n", resolved.Slug)
 	fmt.Printf("name:    %s\n", reg.Name(resolved.Slug))
-	fmt.Printf("tag:     %s\n", reg.Tag(resolved.Slug))
+	fmt.Printf("prefix:  %s\n", reg.Prefix(resolved.Slug))
 	fmt.Printf("tasks:   %d open · %d done\n", open, done)
 	fmt.Printf("source:  %s\n", resolved.Source)
 	if resolved.Raw != "" {

@@ -300,6 +300,38 @@ func TestSortByModified(t *testing.T) {
 	}
 }
 
+// TestProjectsInFilter restricts search to a set of project slugs (the
+// SQL builds `project IN (...)`). Empty slice short-circuits to no
+// results; nil leaves the WHERE clause unconstrained.
+func TestProjectsInFilter(t *testing.T) {
+	idx := openTempIndex(t)
+	alpha := mkTask("ALPHA", "shared milk", "")
+	alpha.ProjectSlug = "alpha"
+	beta := mkTask("BETA", "shared milk", "")
+	beta.ProjectSlug = "beta"
+	gamma := mkTask("GAMMA", "shared milk", "")
+	gamma.ProjectSlug = "gamma"
+	_ = idx.Upsert(alpha)
+	_ = idx.Upsert(beta)
+	_ = idx.Upsert(gamma)
+
+	got, _ := idx.Search("milk", SearchOpts{Projects: []string{"alpha", "gamma"}})
+	if len(got) != 2 {
+		t.Fatalf("Projects filter [alpha gamma] → %d hits, want 2", len(got))
+	}
+	ids := map[string]bool{got[0].Task.ID: true, got[1].Task.ID: true}
+	if !ids["ALPHA"] || !ids["GAMMA"] {
+		t.Errorf("wrong slugs in result: %+v", got)
+	}
+
+	if hits, _ := idx.Search("milk", SearchOpts{Projects: []string{}}); len(hits) != 0 {
+		t.Errorf("empty Projects slice should short-circuit to 0 hits, got %d", len(hits))
+	}
+	if hits, _ := idx.Search("milk", SearchOpts{Projects: nil}); len(hits) != 3 {
+		t.Errorf("nil Projects = no restriction; expected 3 hits, got %d", len(hits))
+	}
+}
+
 // TestSortByCreated covers the "created" branch of the SortBy switch.
 // Created and Modified are intentionally opposite so the test would fail
 // if the SQL fell through to the modified path.

@@ -15,9 +15,14 @@ import (
 // score-ordered, with a default limit of 20.
 type SearchOpts struct {
 	Project string // restrict to one slug; "" = any
-	Status  string // "open" | "done" | "" (any)
-	Limit   int    // 0 → defaultLimit
-	SortBy  string // "score" (default) | "modified" | "created"
+	// Projects, when non-nil, restricts results to that set of slugs
+	// (project IN (…)). Built by callers from a tag filter against the
+	// registry. Empty slice = no match (intersect-with-empty); nil = no
+	// project restriction beyond Project.
+	Projects []string
+	Status   string // "open" | "done" | "" (any)
+	Limit    int    // 0 → defaultLimit
+	SortBy   string // "score" (default) | "modified" | "created"
 }
 
 // SearchHit is one returned match. Task carries the same shape as
@@ -66,6 +71,19 @@ func (i *Index) Search(q string, opts SearchOpts) ([]SearchHit, error) {
 	if opts.Project != "" {
 		conds = append(conds, `tasks_meta.project = ?`)
 		args = append(args, opts.Project)
+	}
+	if opts.Projects != nil {
+		if len(opts.Projects) == 0 {
+			// Empty set means no project survives the filter. Return early
+			// without hitting the DB.
+			return nil, nil
+		}
+		placeholders := strings.Repeat("?,", len(opts.Projects))
+		placeholders = placeholders[:len(placeholders)-1]
+		conds = append(conds, fmt.Sprintf(`tasks_meta.project IN (%s)`, placeholders))
+		for _, p := range opts.Projects {
+			args = append(args, p)
+		}
 	}
 	if opts.Status != "" && opts.Status != "all" {
 		conds = append(conds, `tasks_meta.status = ?`)

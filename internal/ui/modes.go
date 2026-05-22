@@ -2,10 +2,12 @@ package ui
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/MaikuMori/dfc/internal/capture"
 	"github.com/MaikuMori/dfc/internal/core"
+	"github.com/MaikuMori/dfc/internal/project"
 	"github.com/MaikuMori/dfc/internal/storage"
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/textarea"
@@ -51,6 +53,15 @@ func (m Model) updateSwitch(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if !m.picker.Done() {
 		return m, cmd
 	}
+	// ctrl+t on the switcher hands off to the tag editor for the
+	// highlighted project (the switcher closes; tag picker opens).
+	if slug := m.picker.WantTagEditSlug; slug != "" {
+		m.tagEditSlug = slug
+		m.picker = newTagEditPicker(m.core.Registry(), slug)
+		m.mode = modeTagEdit
+		m.relayout()
+		return m, m.picker.Init()
+	}
 	if !m.picker.Canceled() && m.picker.Selected() != "" {
 		if extra, err := m.switchTo(m.picker.Selected()); err != nil {
 			m.err = err
@@ -62,6 +73,136 @@ func (m Model) updateSwitch(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.mode = modeList
 	m.relayout()
 	return m, cmd
+}
+
+// updateTagEdit is the modeTagEdit dispatcher. The picker is a multi-
+// select sub-picker over the registry's known tags, prefilled with the
+// target project's current tag list. Enter commits via SetTags; esc
+// discards. Either way the user is returned to the project switcher
+// they came from, cursor parked on the just-edited slug.
+func (m *Model) updateTagEdit(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	m.picker, cmd = m.picker.Update(msg)
+	if !m.picker.Done() {
+		return m, cmd
+	}
+	if !m.picker.Canceled() {
+		slug := m.tagEditSlug
+		if slug != "" {
+			if err := m.core.Registry().SetTags(slug, m.picker.Selection()); err != nil {
+				m.err = err
+			}
+		}
+	}
+	focus := m.tagEditSlug
+	m.tagEditSlug = ""
+	if cmdSwitch, ok := m.openProjectSwitcher(focus); ok {
+		return m, tea.Batch(cmd, cmdSwitch)
+	}
+	// Fall back to the list view (single-project workspaces shouldn't
+	// have been able to enter tag-edit, but defend anyway).
+	m.picker = Picker{}
+	m.mode = modeList
+	m.relayout()
+	return m, cmd
+}
+
+// openProjectSwitcher builds (or rebuilds) the modeSwitch picker. When
+// focusSlug is non-empty, the cursor parks on that slug so callers
+// returning from a sub-modal (tag editor) don't lose the user's place.
+// Returns ok=false when there's nothing to switch to (≤1 project) — the
+// status hint is set as a side effect.
+func (m *Model) openProjectSwitcher(focusSlug string) (tea.Cmd, bool) {
+	reg := m.core.Registry()
+	items := ProjectPickerItems(reg, m.core.CountsByProject())
+	if len(items) <= 1 {
+		m.status = "only one project — nothing to switch to"
+		return nil, false
+	}
+	p := NewPicker("switch to:", items)
+	p.OnRename = reg.Rename
+	p.OnSetPrefix = reg.SetPrefix
+	p.EnableTagEdit = true
+	p.OnDelete = func(target string) error {
+		if target == m.slug {
+			return fmt.Errorf("can't delete the project you're viewing — switch first")
+		}
+		_, _, err := m.core.RemoveProject(target)
+		return err
+	}
+	if focusSlug != "" {
+		p.FocusSlug(focusSlug)
+	}
+	m.picker = p
+	m.mode = modeSwitch
+	m.relayout()
+	return m.picker.Init(), true
+}
+
+// updateTagFilter is the modeTagFilter dispatcher. Same multi-picker
+// shape as the tag editor; on commit the chosen tags become the
+// session-only filter applied to the global task list.
+func (m Model) updateTagFilter(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	m.picker, cmd = m.picker.Update(msg)
+	if !m.picker.Done() {
+		return m, cmd
+	}
+	if !m.picker.Canceled() {
+		m.tagFilter = m.picker.Selection()
+		m = m.reloadActive()
+	}
+	m.picker = Picker{}
+	m.mode = modeList
+	m.relayout()
+	return m, cmd
+}
+
+// newTagFilterPicker builds the multi-picker that drives the global-view
+// tag filter. Reuses tagPickerItems with the synthetic (untagged) row.
+func newTagFilterPicker(reg *project.Registry, current []string) Picker {
+	items := tagPickerItems(reg, true)
+	picker := NewPicker("filter tags", items)
+	picker.SetMode(modeSelectMany)
+	picker.PreselectMany(current)
+	return picker
+}
+
+// newTagEditPicker builds a many-select picker over reg.AllTags() with
+// the target project's current tag list preselected. Stores the target
+// slug on the Model via tagEditSlug.
+func newTagEditPicker(reg *project.Registry, targetSlug string) Picker {
+	items := tagPickerItems(reg, false)
+	picker := NewPicker("tags · "+targetSlug, items)
+	picker.SetMode(modeSelectMany)
+	picker.PreselectMany(reg.Tags(targetSlug))
+	picker.OnAdd = func(string) {} // presence signals "n" is enabled; no side effect
+	return picker
+}
+
+// tagPickerItems returns the PickerItems that represent the registry's
+// known tags, sorted by usage desc then name asc. When includeUntagged
+// is true, a synthetic "(untagged)" row is appended (its count is the
+// number of projects with no tags); used by the filter overlay only.
+func tagPickerItems(reg *project.Registry, includeUntagged bool) []PickerItem {
+	summaries := reg.AllTags()
+	items := make([]PickerItem, 0, len(summaries)+1)
+	for _, s := range summaries {
+		items = append(items, PickerItem{Slug: s.Name, Name: s.Name, Count: len(s.Slugs)})
+	}
+	sort.SliceStable(items, func(i, j int) bool {
+		if items[i].Count != items[j].Count {
+			return items[i].Count > items[j].Count
+		}
+		return items[i].Name < items[j].Name
+	})
+	if includeUntagged {
+		untagged := reg.UntaggedSlugs()
+		if len(untagged) > 0 {
+			items = append(items, PickerItem{Slug: "(untagged)", Name: "(untagged)", Count: len(untagged)})
+		}
+	}
+	return items
 }
 
 // switchTo points the model at a different project. Returns a Cmd that
@@ -165,6 +306,21 @@ func (m Model) updateList(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if m.searchQuery != "" {
 			m = m.runSearch()
 		}
+
+	case key.Matches(msg, keys.Filter):
+		if !m.globalView {
+			m.status = "f only works in global view (press A first)"
+			return m, nil
+		}
+		reg := m.core.Registry()
+		if len(reg.AllTags()) == 0 {
+			m.status = "no tags yet — add some via the project switcher (P → ctrl+t)"
+			return m, nil
+		}
+		m.picker = newTagFilterPicker(reg, m.tagFilter)
+		m.mode = modeTagFilter
+		m.relayout()
+		return m, m.picker.Init()
 
 	case key.Matches(msg, keys.Sort):
 		m.sortKey = m.sortKey.next()
@@ -283,28 +439,11 @@ func (m Model) updateList(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case key.Matches(msg, keys.Switch):
-		reg := m.core.Registry()
-		items := ProjectPickerItems(reg, m.core.CountsByProject())
-		if len(items) <= 1 {
-			m.status = "only one project — nothing to switch to"
+		cmd, ok := m.openProjectSwitcher("")
+		if !ok {
 			return m, nil
 		}
-		m.picker = NewPicker("switch to:", items)
-		m.picker.OnRename = reg.Rename
-		m.picker.OnSetTag = reg.SetTag
-		m.picker.OnDelete = func(target string) error {
-			// Guard against deleting the project the model is currently
-			// pointed at — leaves the user staring at a half-broken state
-			// otherwise (watcher attached to a missing dir, etc.).
-			if target == m.slug {
-				return fmt.Errorf("can't delete the project you're viewing — switch first")
-			}
-			_, _, err := m.core.RemoveProject(target)
-			return err
-		}
-		m.mode = modeSwitch
-		m.relayout()
-		return m, m.picker.Init()
+		return m, cmd
 
 	case key.Matches(msg, keys.Global):
 		// Refresh the registry so a project that appeared since launch

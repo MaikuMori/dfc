@@ -22,6 +22,8 @@ const (
 	modeSearch
 	modeSwitch
 	modeCaptureTarget // picker that chooses a project to capture into (global view only)
+	modeTagEdit       // multi-select picker that edits a project's categorical tags
+	modeTagFilter     // multi-select picker that drives the global-view tag filter
 	modeHelp
 )
 
@@ -58,6 +60,8 @@ type Model struct {
 	lastBody      string // last body string handed to viewport.SetContent — used to skip redundant re-splits
 	searchQuery   string // active filter; "" = no filter
 	sortKey       sortKey
+	tagFilter     []string // session-only categorical-tag filter, applied in global view
+	tagEditSlug   string   // set transiently while modeTagEdit is running
 }
 
 // New constructs a Model bound to the given Core, project slug, store
@@ -192,6 +196,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateSwitch(msg)
 		case modeCaptureTarget:
 			return m.updateCaptureTarget(msg)
+		case modeTagEdit:
+			return m.updateTagEdit(msg)
+		case modeTagFilter:
+			return m.updateTagFilter(msg)
 		case modeHelp:
 			return m.updateHelp(msg)
 		}
@@ -214,13 +222,27 @@ func (m Model) View() tea.View {
 	b.WriteString(m.header())
 	b.WriteByte('\n')
 
-	if m.mode == modeSwitch || m.mode == modeCaptureTarget {
+	if m.mode == modeSwitch || m.mode == modeCaptureTarget || m.mode == modeTagEdit || m.mode == modeTagFilter {
 		pickerView := m.picker.View()
 		var hintText string
-		if m.mode == modeSwitch {
+		switch {
+		case m.picker.ConfirmingDelete():
+			// The picker prints "press y to confirm · any other key
+			// cancels" already; suppress the outer mode chords which
+			// would otherwise look like they still do their thing.
+			hintText = ""
+		case m.picker.EditingInput():
+			// The picker is showing its own "rename · …" / "new tag · …"
+			// preamble — the outer footer just echoes save/cancel.
+			hintText = joinBindings(keys.InputHints())
+		case m.mode == modeSwitch:
 			hintText = joinBindings(keys.SwitchPickerHints())
-		} else {
+		case m.mode == modeCaptureTarget:
 			hintText = joinBindings(keys.CaptureTargetHints())
+		case m.mode == modeTagEdit:
+			hintText = joinBindings(keys.TagEditHints())
+		case m.mode == modeTagFilter:
+			hintText = joinBindings(keys.TagFilterHints())
 		}
 		hint := styleHint.Render(hintText)
 		block := pickerView + "\n" + hint
@@ -273,13 +295,44 @@ func (m Model) View() tea.View {
 
 func (m Model) header() string {
 	if m.globalView {
-		return styleHeader.Render(fmt.Sprintf("all (%d)", len(m.tasks)))
+		// While the tag-filter picker is open, project a live count
+		// against the picker's current selection so toggling rows updates
+		// the visible total instead of waiting for the commit.
+		filter, count := m.tagFilter, len(m.tasks)
+		if m.mode == modeTagFilter {
+			filter = m.picker.Selection()
+			count = m.countTasksMatchingTagFilter(filter)
+		}
+		label := fmt.Sprintf("all (%d)", count)
+		if len(filter) > 0 {
+			label += "  " + styleHint.Render("filter: ["+strings.Join(filter, ", ")+"]")
+		}
+		return styleHeader.Render(label)
 	}
 	name := m.slug
 	if m.core != nil {
 		name = m.core.Registry().Name(m.slug)
 	}
 	return styleHeader.Render(name)
+}
+
+// countTasksMatchingTagFilter returns the number of tasks from the
+// full merged list (reloadAll's input, pre-filter) that would survive
+// the given tag filter. Used for live previewing the post-commit count
+// while the tag-filter picker is open.
+func (m Model) countTasksMatchingTagFilter(filter []string) int {
+	all, _ := m.core.ListAll()
+	if len(filter) == 0 {
+		return len(all)
+	}
+	reg := m.core.Registry()
+	n := 0
+	for _, t := range all {
+		if tagFilterMatches(reg, t.ProjectSlug, filter) {
+			n++
+		}
+	}
+	return n
 }
 
 func (m Model) footer() string {

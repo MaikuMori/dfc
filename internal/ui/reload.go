@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/MaikuMori/dfc/internal/index"
+	"github.com/MaikuMori/dfc/internal/project"
 	"github.com/MaikuMori/dfc/internal/storage"
 )
 
@@ -147,13 +148,54 @@ func (m Model) reload() Model {
 }
 
 // reloadAll lists every known project and merges into one sorted slice.
-// Per-project errors are non-fatal (best-effort).
+// Per-project errors are non-fatal (best-effort). When m.tagFilter is
+// non-empty, only tasks belonging to matching projects survive.
 func (m Model) reloadAll() Model {
 	all, err := m.core.ListAll()
 	if err != nil {
 		m.err = err
 	}
+	if len(m.tagFilter) > 0 {
+		reg := m.core.Registry()
+		out := all[:0]
+		for _, t := range all {
+			if tagFilterMatches(reg, t.ProjectSlug, m.tagFilter) {
+				out = append(out, t)
+			}
+		}
+		all = out
+	}
 	return m.applyTaskListPreservingCursor(all)
+}
+
+// tagFilterMatches mirrors matchesTagFilter from internal/cli but lives
+// here so the ui package doesn't need to import internal/cli (which
+// would be a layer violation). Keeps the OR + (untagged) semantics.
+func tagFilterMatches(reg *project.Registry, slug string, filter []string) bool {
+	if len(filter) == 0 {
+		return true
+	}
+	tags := reg.Tags(slug)
+	hasUntagged := false
+	wantTags := make([]string, 0, len(filter))
+	for _, f := range filter {
+		if strings.EqualFold(f, "(untagged)") {
+			hasUntagged = true
+			continue
+		}
+		wantTags = append(wantTags, f)
+	}
+	if hasUntagged && len(tags) == 0 {
+		return true
+	}
+	for _, w := range wantTags {
+		for _, t := range tags {
+			if strings.EqualFold(w, t) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // applyTaskListPreservingCursor commits a new task list to the model,

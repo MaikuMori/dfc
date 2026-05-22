@@ -22,11 +22,11 @@ func ProjectPickerItems(reg *project.Registry, counts map[string]index.ProjectCo
 	for _, s := range slugs {
 		c := counts[s]
 		items = append(items, PickerItem{
-			Slug: s,
-			Name: reg.Name(s),
-			Tag:  reg.Tag(s),
-			Open: c.Open,
-			Done: c.Done,
+			Slug:   s,
+			Name:   reg.Name(s),
+			Prefix: reg.Prefix(s),
+			Open:   c.Open,
+			Done:   c.Done,
 		})
 	}
 	sort.SliceStable(items, func(i, j int) bool {
@@ -41,16 +41,25 @@ func ProjectPickerItems(reg *project.Registry, counts map[string]index.ProjectCo
 }
 
 // PickerItem is one row offered to the user. Both Name and Slug feed the
-// fuzzy index so typing either matches. Tag is the short prefix shown
-// in global-view rows (and editable via ctrl+t in the picker). Open/Done
-// counts are rendered alongside the name when non-zero.
+// fuzzy index so typing either matches. Prefix / Open / Done render in
+// project-picker contexts; Count renders in many-select contexts (e.g.
+// the project-count for a tag in the tag picker).
 type PickerItem struct {
-	Slug string
-	Name string
-	Tag  string
-	Open int
-	Done int
+	Slug   string
+	Name   string
+	Prefix string
+	Open   int
+	Done   int
+	Count  int
 }
+
+// pickerMode controls how the picker treats `enter` and `space`.
+type pickerMode int
+
+const (
+	modeSelectOne  pickerMode = iota // single-select — project switcher, capture-target picker
+	modeSelectMany                   // multi-select — filter overlay, tag editor
+)
 
 const pickerMaxRows = 8
 
@@ -60,8 +69,9 @@ type editKind int
 const (
 	editNone          editKind = iota
 	editRename                 // ctrl+r — change Name
-	editTag                    // ctrl+t — change Tag
+	editPrefix                 // ctrl+p — change Prefix
 	editConfirmDelete          // ctrl+shift+d — confirm full project deletion
+	editAddItem                // n — many-mode "new item" prompt
 )
 
 // Picker is a reusable inline filter-and-pick component. It is NOT a
@@ -69,8 +79,8 @@ const (
 // Done()/Selected()/Canceled() after each Update.
 //
 // Optional secondary edits:
-//   - OnRename + ctrl+r: change the highlighted item's Name.
-//   - OnSetTag + ctrl+t: change the highlighted item's Tag.
+//   - OnRename    + ctrl+r: change the highlighted item's Name.
+//   - OnSetPrefix + ctrl+p: change the highlighted item's Prefix.
 //
 // In edit mode the input is pre-loaded with the current value; enter commits,
 // esc cancels back to the filter.
@@ -85,13 +95,30 @@ type Picker struct {
 	canceled bool
 	prompt   string
 
-	OnRename func(slug, name string) error
-	OnSetTag func(slug, tag string) error
+	mode   pickerMode
+	chosen map[string]bool // many-mode: keyed by item.Slug
+
+	OnRename    func(slug, name string) error
+	OnSetPrefix func(slug, prefix string) error
+	// EnableTagEdit lets ctrl+t in single-mode exit the picker with
+	// WantTagEditSlug set to the highlighted row. Callers wire this when
+	// they want to open a follow-up tag editor for the chosen project;
+	// off by default so standalone pickers (`dfc cc`) don't surprise-quit
+	// on a stray ctrl+t.
+	EnableTagEdit   bool
+	WantTagEditSlug string
 	// OnDelete is called after the user confirms deletion via ctrl+shift+d
 	// followed by y. The picker also drops the row from its own items
 	// slice and recomputes matches, so the deleted project disappears
 	// immediately without a round-trip through the caller.
 	OnDelete func(slug string) error
+	// OnAdd, when non-nil in many-mode, enables a `n` keybinding that
+	// opens an inline prompt for a brand-new item. The committed value is
+	// appended to the picker's items as a new row and marked chosen. The
+	// caller's handler decides whether to persist (e.g. into the
+	// registry) on Done — the picker itself only updates its in-memory
+	// list.
+	OnAdd func(name string)
 
 	edit        editKind
 	editIdx     int    // index into items being edited
@@ -131,6 +158,72 @@ func NewPicker(prompt string, items []PickerItem) Picker {
 	return p
 }
 
+// FocusSlug parks the cursor on the row whose Slug matches the given
+// value, if any. No-op when the slug isn't in the item list or the
+// current filter hides it. Used to re-open a picker pointing at the
+// same project the user just left.
+func (p *Picker) FocusSlug(slug string) {
+	for i, m := range p.matches {
+		if p.items[m].Slug == slug {
+			p.cursor = i
+			return
+		}
+	}
+}
+
+// SetMode switches the picker to single- or multi-select. Multi-mode
+// enables `space` to toggle the row under the cursor, `c` to clear all
+// selections, and `n` (when OnAdd is wired) to add a new item. `enter`
+// still ends the picker session; in many-mode the caller reads
+// Selection() instead of Selected().
+func (p *Picker) SetMode(mode pickerMode) {
+	p.mode = mode
+	if mode == modeSelectMany && p.chosen == nil {
+		p.chosen = map[string]bool{}
+	}
+}
+
+// PreselectMany seeds the multi-select set with the given slugs. Only
+// meaningful in many-mode. Pass nil/empty to clear.
+func (p *Picker) PreselectMany(slugs []string) {
+	if p.chosen == nil {
+		p.chosen = map[string]bool{}
+	}
+	clear(p.chosen)
+	for _, s := range slugs {
+		p.chosen[s] = true
+	}
+}
+
+// Selection returns the chosen slugs in the picker's current display
+// order (top-to-bottom, which is highest-match-index to lowest). Only
+// meaningful after Done() in many-mode.
+func (p Picker) Selection() []string {
+	out := make([]string, 0, len(p.chosen))
+	for _, it := range p.items {
+		if p.chosen[it.Slug] {
+			out = append(out, it.Slug)
+		}
+	}
+	return out
+}
+
+// AppendItem adds a row to the picker (used by the many-mode "new item"
+// flow). The row goes to the end of items so the new match shows on top
+// of the bottom-up render. Auto-selects in many-mode.
+func (p *Picker) AppendItem(name string) {
+	slug := name
+	p.items = append(p.items, PickerItem{Slug: slug, Name: name})
+	p.haystack = append(p.haystack, name+"\t"+slug)
+	if p.mode == modeSelectMany {
+		if p.chosen == nil {
+			p.chosen = map[string]bool{}
+		}
+		p.chosen[slug] = true
+	}
+	p.recomputeMatches()
+}
+
 // Init returns a Cmd to start textinput blinking. Safe to ignore when
 // embedded.
 func (p Picker) Init() tea.Cmd { return textinput.Blink }
@@ -148,20 +241,46 @@ func (p Picker) Update(msg tea.Msg) (Picker, tea.Cmd) {
 			p.canceled = true
 			return p, nil
 		case "enter":
+			if p.mode == modeSelectMany {
+				p.done = true
+				return p, nil
+			}
 			if p.cursor >= 0 && p.cursor < len(p.matches) {
 				p.selected = p.items[p.matches[p.cursor]].Slug
 			}
 			p.done = true
 			return p, nil
+		case " ", "space":
+			if p.mode == modeSelectMany && p.cursor >= 0 && p.cursor < len(p.matches) {
+				slug := p.items[p.matches[p.cursor]].Slug
+				if p.chosen == nil {
+					p.chosen = map[string]bool{}
+				}
+				if p.chosen[slug] {
+					delete(p.chosen, slug)
+				} else {
+					p.chosen[slug] = true
+				}
+				return p, nil
+			}
+		case "ctrl+l":
+			if p.mode == modeSelectMany && len(p.chosen) > 0 {
+				clear(p.chosen)
+				return p, nil
+			}
+		case "ctrl+n":
+			if p.mode == modeSelectMany && p.OnAdd != nil {
+				return p.enterEdit(editAddItem), nil
+			}
 		// Bottom-up display: index 0 is at the bottom (best/most-recent),
 		// so visually "up" walks toward higher indices and "down" walks
 		// toward 0.
-		case "up", "ctrl+p":
+		case "up":
 			if p.cursor < len(p.matches)-1 {
 				p.cursor++
 			}
 			return p, nil
-		case "down", "ctrl+n":
+		case "down":
 			if p.cursor > 0 {
 				p.cursor--
 			}
@@ -171,9 +290,16 @@ func (p Picker) Update(msg tea.Msg) (Picker, tea.Cmd) {
 				return p.enterEdit(editRename), nil
 			}
 			return p, nil
+		case "ctrl+p":
+			if p.OnSetPrefix != nil && p.cursor >= 0 && p.cursor < len(p.matches) {
+				return p.enterEdit(editPrefix), nil
+			}
+			return p, nil
 		case "ctrl+t":
-			if p.OnSetTag != nil && p.cursor >= 0 && p.cursor < len(p.matches) {
-				return p.enterEdit(editTag), nil
+			if p.EnableTagEdit && p.cursor >= 0 && p.cursor < len(p.matches) {
+				p.WantTagEditSlug = p.items[p.matches[p.cursor]].Slug
+				p.done = true
+				return p, nil
 			}
 			return p, nil
 		case "ctrl+shift+d":
@@ -196,18 +322,26 @@ func (p Picker) Update(msg tea.Msg) (Picker, tea.Cmd) {
 }
 
 func (p Picker) enterEdit(kind editKind) Picker {
-	idx := p.matches[p.cursor]
-	p.edit = kind
-	p.editIdx = idx
 	p.savedFilter = p.input.Value()
 	p.editErr = nil
+	p.edit = kind
+	if kind == editAddItem {
+		// editAddItem isn't tied to a specific row.
+		p.input.SetValue("")
+		p.input.Placeholder = "new tag"
+		return p
+	}
+	idx := p.matches[p.cursor]
+	p.editIdx = idx
 	switch kind {
 	case editRename:
 		p.input.SetValue(p.items[idx].Name)
 		p.input.CursorEnd()
-	case editTag:
-		p.input.SetValue(p.items[idx].Tag)
+		p.input.Placeholder = "name"
+	case editPrefix:
+		p.input.SetValue(p.items[idx].Prefix)
 		p.input.CursorEnd()
+		p.input.Placeholder = "prefix"
 	case editConfirmDelete:
 		// Don't pre-load the textinput — we want a single y/n keystroke,
 		// not editable text. The View renders a static prompt instead.
@@ -223,6 +357,10 @@ func (p Picker) enterEdit(kind editKind) Picker {
 func (p Picker) exitEdit() Picker {
 	p.edit = editNone
 	p.editErr = nil
+	// Reset the placeholder back to "filter" — editAddItem retitles it
+	// to "new tag" while the prompt is open, and without resetting the
+	// stale label leaks back into the filter view.
+	p.input.Placeholder = "filter"
 	p.input.SetValue(p.savedFilter)
 	p.input.CursorEnd()
 	p.recomputeMatches()
@@ -239,6 +377,16 @@ func (p Picker) updateEdit(msg tea.Msg) (Picker, tea.Cmd) {
 			return p.exitEdit(), nil
 		case "enter":
 			value := strings.TrimSpace(p.input.Value())
+			if p.edit == editAddItem {
+				if value == "" {
+					return p.exitEdit(), nil
+				}
+				if p.OnAdd != nil {
+					p.OnAdd(value)
+				}
+				p.AppendItem(value)
+				return p.exitEdit(), nil
+			}
 			slug := p.items[p.editIdx].Slug
 			switch p.edit {
 			case editRename:
@@ -253,15 +401,15 @@ func (p Picker) updateEdit(msg tea.Msg) (Picker, tea.Cmd) {
 				}
 				p.items[p.editIdx].Name = value
 				p.haystack[p.editIdx] = value + "\t" + slug
-			case editTag:
-				// Empty tag is meaningful — reverts to default; allow it.
-				if p.OnSetTag != nil {
-					if err := p.OnSetTag(slug, value); err != nil {
+			case editPrefix:
+				// Empty prefix is meaningful — reverts to default; allow it.
+				if p.OnSetPrefix != nil {
+					if err := p.OnSetPrefix(slug, value); err != nil {
 						p.editErr = err
 						return p, nil
 					}
 				}
-				p.items[p.editIdx].Tag = value
+				p.items[p.editIdx].Prefix = value
 			}
 			return p.exitEdit(), nil
 		}
@@ -338,8 +486,11 @@ func (p Picker) View() string {
 	case p.edit == editRename:
 		b.WriteString(styleHint.Render("rename · " + p.items[p.editIdx].Slug))
 		b.WriteByte('\n')
-	case p.edit == editTag:
-		b.WriteString(styleHint.Render("set tag · " + p.items[p.editIdx].Slug))
+	case p.edit == editPrefix:
+		b.WriteString(styleHint.Render("set prefix · " + p.items[p.editIdx].Slug))
+		b.WriteByte('\n')
+	case p.edit == editAddItem:
+		b.WriteString(styleHint.Render("new tag · enter saves · esc cancels"))
 		b.WriteByte('\n')
 	case p.edit == editConfirmDelete:
 		name := p.items[p.editIdx].Name
@@ -375,20 +526,35 @@ func (p Picker) View() string {
 
 	for i := end - 1; i >= start; i-- {
 		it := p.items[p.matches[i]]
+		mark := ""
+		if p.mode == modeSelectMany {
+			if p.chosen[it.Slug] {
+				mark = "● "
+			} else {
+				mark = "○ "
+			}
+		}
 		counts := pickerCountsLabel(it)
+		countLabel := ""
+		if p.mode == modeSelectMany && it.Count > 0 {
+			countLabel = fmt.Sprintf(" (%d)", it.Count)
+		}
 		if i == p.cursor {
-			line := "> " + it.Name
-			if it.Tag != "" {
-				line += "  [" + it.Tag + "]"
+			line := "> " + mark + it.Name + countLabel
+			if it.Prefix != "" {
+				line += "  [" + it.Prefix + "]"
 			}
 			if counts != "" {
 				line += "  " + counts
 			}
 			b.WriteString(styleCursor.Render(line))
 		} else {
-			b.WriteString("  " + it.Name)
-			if it.Tag != "" {
-				b.WriteString(styleHint.Render("  [" + it.Tag + "]"))
+			b.WriteString("  " + mark + it.Name)
+			if countLabel != "" {
+				b.WriteString(styleHint.Render(countLabel))
+			}
+			if it.Prefix != "" {
+				b.WriteString(styleHint.Render("  [" + it.Prefix + "]"))
 			}
 			if counts != "" {
 				b.WriteString(styleHint.Render("  " + counts))
@@ -429,8 +595,23 @@ func (p *Picker) SetWidth(w int) {
 // Renaming reports whether the picker is currently in rename mode.
 func (p Picker) Renaming() bool { return p.edit == editRename }
 
-// SettingTag reports whether the picker is currently in tag-edit mode.
-func (p Picker) SettingTag() bool { return p.edit == editTag }
+// SettingPrefix reports whether the picker is currently in prefix-edit mode.
+func (p Picker) SettingPrefix() bool { return p.edit == editPrefix }
+
+// EditingInput reports whether the picker has opened an inline text-
+// input sub-mode (rename, set-prefix, or new-item-prompt). Callers use
+// this to swap the outer footer hints for plain input hints (the picker
+// renders its own one-line preamble for the sub-mode).
+func (p Picker) EditingInput() bool {
+	return p.edit == editRename || p.edit == editPrefix || p.edit == editAddItem
+}
+
+// ConfirmingDelete reports whether the picker is in the y/N gate for
+// project deletion. The picker prints its own "press y to confirm · any
+// other key cancels" line; callers use this to suppress the outer
+// mode-specific hint chords which would otherwise look like they still
+// did their advertised action.
+func (p Picker) ConfirmingDelete() bool { return p.edit == editConfirmDelete }
 
 func (p Picker) Done() bool       { return p.done }
 func (p Picker) Canceled() bool   { return p.canceled }
@@ -458,14 +639,14 @@ func (pp pickerProgram) View() tea.View {
 }
 
 // Pick runs the picker as a standalone inline program. ok is false on cancel.
-// onRename / onSetTag, if non-nil, enable ctrl+r and ctrl+t edit modes.
-func Pick(prompt string, items []PickerItem, onRename, onSetTag func(slug, value string) error) (slug string, ok bool, err error) {
+// onRename / onSetPrefix, if non-nil, enable ctrl+r and ctrl+p edit modes.
+func Pick(prompt string, items []PickerItem, onRename, onSetPrefix func(slug, value string) error) (slug string, ok bool, err error) {
 	if len(items) == 0 {
 		return "", false, nil
 	}
 	picker := NewPicker(prompt, items)
 	picker.OnRename = onRename
-	picker.OnSetTag = onSetTag
+	picker.OnSetPrefix = onSetPrefix
 	final, runErr := tea.NewProgram(pickerProgram{p: picker}).Run()
 	if runErr != nil {
 		return "", false, runErr

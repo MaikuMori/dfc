@@ -137,8 +137,7 @@ func TestScopeFromArgsResolvesDisplayName(t *testing.T) {
 
 func TestPredictTaskOpenScopedToCwd(t *testing.T) {
 	setupDFCRoot(t)
-	cwdSlug, openTask := captureInCwdProject(t, "open in cwd")
-	_ = openTask
+	openTask := captureInCwdProject(t, "open in cwd")
 	otherTask := captureFirst(t, "in acme")
 
 	// cwd scope: only the cwd task shows up
@@ -164,13 +163,12 @@ func TestPredictTaskOpenScopedToCwd(t *testing.T) {
 	if !contains(gotP, otherTask.ID) {
 		t.Errorf("-p acme missing acme task: %v", gotP)
 	}
-	_ = cwdSlug
 }
 
 func TestPredictTaskFiltersByStatus(t *testing.T) {
 	setupDFCRoot(t)
-	_, openTask := captureInCwdProject(t, "still open")
-	_, doneTask := captureInCwdProject(t, "going to be done")
+	openTask := captureInCwdProject(t, "still open")
+	doneTask := captureInCwdProject(t, "going to be done")
 
 	cr, _ := core.Open(core.Options{Warn: func(string, error) {}})
 	defer func() { _ = cr.Close() }()
@@ -196,7 +194,7 @@ func TestPredictTaskFiltersByStatus(t *testing.T) {
 
 func TestPredictRichFormatEmitsTabSeparatedDescription(t *testing.T) {
 	setupDFCRoot(t)
-	_, task := captureInCwdProject(t, "buy milk")
+	task := captureInCwdProject(t, "buy milk")
 
 	t.Setenv(EnvCompleteFormat, "rich")
 	got := predictTasksFn(scopeTaskOpen)(complete.Args{})
@@ -208,7 +206,7 @@ func TestPredictRichFormatEmitsTabSeparatedDescription(t *testing.T) {
 
 func TestPredictPlainFormatEmitsBareID(t *testing.T) {
 	setupDFCRoot(t)
-	_, task := captureInCwdProject(t, "buy milk")
+	task := captureInCwdProject(t, "buy milk")
 
 	got := predictTasksFn(scopeTaskOpen)(complete.Args{})
 	if !contains(got, task.ID) {
@@ -238,11 +236,11 @@ func TestPredictTrashIDsLists(t *testing.T) {
 }
 
 func TestTruncateAddsEllipsisOnlyWhenOverflowing(t *testing.T) {
-	if got := truncate("short", 60); got != "short" {
+	if got := truncate("short"); got != "short" {
 		t.Errorf("short string mutated: %q", got)
 	}
 	long := strings.Repeat("a", 80)
-	got := truncate(long, 60)
+	got := truncate(long)
 	if runeLen(got) != 60 || !strings.HasSuffix(got, "…") {
 		t.Errorf("truncate(80→60 runes) = %q (len %d runes)", got, runeLen(got))
 	}
