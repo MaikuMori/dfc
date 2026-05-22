@@ -1,3 +1,0 @@
-kind: fixed
-body: Shell completion now follows subcommand aliases (c, s, list), so 'dfc c -p <TAB>' suggests projects the same way 'dfc capture -p <TAB>' does.
-time: 2026-05-22T14:59:03.378896-04:00
