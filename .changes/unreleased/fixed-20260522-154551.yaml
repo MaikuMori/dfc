@@ -1,0 +1,3 @@
+kind: fixed
+body: 'Agent skill (skill/SKILL.md): corrected the ''dfc edit'' flag docs — ''-d'' is the short form of ''--details'' (not ''--description''). Added explicit guidance steering agents toward direct markdown file edits for partial changes; ''dfc edit --details'' replaces the whole body.'
+time: 2026-05-22T15:45:51.726168-04:00

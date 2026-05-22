@@ -87,12 +87,22 @@ No-op when already in the target state (returns the row unchanged).
 ### `dfc edit <26-char ULID>` — rewrite description and/or details
 
 ```
-dfc edit <26-char ULID> [-d <new-desc>] [--details <body>|-] [--json]
+dfc edit <26-char ULID> [--description <text>] [-d <body>|--details <body>|-] [--json]
 ```
 
-- `-d, --description`: rename the heading (and the on-disk file).
-- `--details`: replace the body. `-` reads from stdin.
+- `--description <text>`: rewrite the H1 heading and rename the on-disk file to match. No short flag.
+- `-d, --details <body>`: replace the entire body. `-` reads from stdin.
 - At least one of the two must be supplied.
+
+**For surgical edits, edit the markdown file directly.** `dfc edit --details` overwrites the whole body, which destroys content when you only wanted to change one line. For typo fixes, paragraph additions, or any partial change, read the task's path and Edit the file in place:
+
+```
+dfc show <26-char ULID> --json | jq -r .path
+```
+
+Each task file is YAML frontmatter (keep `id` and `created` untouched; `status` is fine to flip) + a single H1 (the description) + an optional body. After an external edit, the watcher / mtime sort picks the change up automatically; if a search seems stale, pass `--reindex` to `dfc s`. The on-disk filename's slug is cosmetic — you don't need to rename the file when you change the H1.
+
+Reserve `dfc edit` itself for: wholesale body rewrites (you intend to replace everything), or programmatic description renames (`--description "new title"` also fixes the filename slug).
 
 ### `dfc rm <26-char ULID>` — soft-delete a task
 
@@ -232,6 +242,7 @@ Optional details body.
 - **`dfc c` with no description and no TTY errors out.** In agent contexts always pass a description (or `-` for stdin).
 - **`-a` and `-p` are mutually exclusive** on `ls`.
 - **Search index lag.** Write-through keeps it fresh on every mutation, but an external editor that bypasses the CLI can drift. Either let `EnsureFresh` catch it on the next query (automatic) or force with `--reindex`.
+- **Prefer direct file edits for partial changes.** `dfc edit --details` replaces the whole body; for adding a paragraph or fixing a typo, get the path from `dfc show --json` and Edit the markdown directly. See the `dfc edit` section for details.
 - **Status enum** is exactly `open` | `done`. There is no in-progress / cancelled.
 - **`rm` is soft.** Deleted tasks live in `~/.dfc/trash/` and are recoverable via `dfc undo` until the TTL sweep. Use `dfc trash empty` to purge irrevocably.
 - **Project slugs are deterministic from cwd**, so don't fabricate them — use `dfc project --json` or pass `-p` with a value the user gave you.
