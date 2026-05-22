@@ -10,19 +10,24 @@ versionFormat: '## [{{.Version}}] - {{.Time.Format "2006-01-02"}}'
 kindFormat: '### {{.Kind}}'
 changeFormat: '- {{.Body}}'
 
+# Pre-1.0 semver: breaking changes are permitted in any release and the
+# major number stays at zero. Changed / Removed therefore map to `minor`
+# (not `major`) so `changie next auto` cannot land us at v1.0.0 by
+# accident. The moment we cut v1.0.0, flip Changed and Removed back to
+# `auto: major` — that's when the major slot becomes meaningful again.
 kinds:
   - label: Added
     key: added
     auto: minor
   - label: Changed
     key: changed
-    auto: major
+    auto: minor
   - label: Deprecated
     key: deprecated
     auto: minor
   - label: Removed
     key: removed
-    auto: major
+    auto: minor
   - label: Fixed
     key: fixed
     auto: patch
