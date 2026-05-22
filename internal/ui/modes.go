@@ -138,6 +138,10 @@ func (m Model) updateList(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if len(m.tasks) == 0 {
 			return m, nil
 		}
+		// Hold the cursor at its on-screen position so rapid marking
+		// drains the task under it instead of teleporting along with
+		// each toggled item.
+		prev := m.cursor
 		t := m.tasks[m.cursor]
 		if t.Status == storage.StatusDone {
 			t.Status = storage.StatusOpen
@@ -150,9 +154,13 @@ func (m Model) updateList(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		m.err = nil
 		m.tasks = sortDoneFirst(replaceByID(m.tasks, t))
-		if i := indexByIDSlug(m.tasks, t.ID, t.ProjectSlug, m.globalView); i >= 0 {
-			m.cursor = i
+		if prev >= len(m.tasks) {
+			prev = len(m.tasks) - 1
 		}
+		if prev < 0 {
+			prev = 0
+		}
+		m.cursor = prev
 		m.followCursor()
 		if m.searchQuery != "" {
 			m = m.runSearch()

@@ -1,0 +1,3 @@
+kind: fixed
+body: Marking a task done (or open) in the TUI no longer yanks the cursor to follow the task. The cursor holds its on-screen position so rapid space-toggling drains the next task under it.
+time: 2026-05-22T15:04:09.637576-04:00
