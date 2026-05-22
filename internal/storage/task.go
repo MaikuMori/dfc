@@ -25,6 +25,10 @@ const (
 	StatusDone Status = "done"
 )
 
+// ULIDLen is the canonical string length of a ULID (Crockford base32
+// encoding of 128 bits is always 26 characters).
+const ULIDLen = 26
+
 type Task struct {
 	ID          string    `yaml:"id"`
 	Status      Status    `yaml:"status"`

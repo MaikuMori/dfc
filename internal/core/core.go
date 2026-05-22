@@ -686,8 +686,8 @@ func NotFound(id string) error { return &NotFoundError{ID: id} }
 // validateID rejects malformed task IDs early so callers don't need to
 // re-implement the length check at every entry point.
 func validateID(id string) error {
-	if len(id) != 26 {
-		return fmt.Errorf("task id must be a 26-character ULID (got %d)", len(id))
+	if len(id) != storage.ULIDLen {
+		return fmt.Errorf("task id must be a %d-character ULID (got %d)", storage.ULIDLen, len(id))
 	}
 	return nil
 }

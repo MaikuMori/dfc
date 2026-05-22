@@ -49,7 +49,7 @@ dfc ls [-p <slug> | -a] [--status open|done|all] [--json]
 - `--status`: `open`, `done`, or `all` (default `all`).
 - `--json`: NDJSON, one `TaskOut` per line.
 
-Human format: `<ULID>  <○|✓>  [<tag>] <description>` (tag only in `-a` mode).
+Human format: `<26-char ULID>  <○|✓>  [<tag>] <description>` (tag only in `-a` mode).
 
 ### `dfc s` / `dfc search` — full-text search (cwd-local by default)
 
@@ -69,13 +69,13 @@ dfc ss <query>... [-p <slug>]      [--status ...] [-n 20] [--sort score|modified
 
 Human output groups by project when hits span >1 project. Description is bolded with `<mark>...</mark>` highlights replaced by ANSI inversion on TTY. ID rides on the last description line as a dim `[01KRJF7R2R]` (10-char ULID prefix — copy the full one from `--json`).
 
-### `dfc show <id>` — print one task
+### `dfc show <26-char ULID>` — print one task
 
 ```
 dfc show <26-char ULID> [--json]
 ```
 
-### `dfc done <id>` / `dfc reopen <id>` — toggle status
+### `dfc done <26-char ULID>` / `dfc reopen <26-char ULID>` — toggle status
 
 ```
 dfc done   <26-char ULID> [--json]
@@ -84,17 +84,17 @@ dfc reopen <26-char ULID> [--json]
 
 No-op when already in the target state (returns the row unchanged).
 
-### `dfc edit <id>` — rewrite description and/or details
+### `dfc edit <26-char ULID>` — rewrite description and/or details
 
 ```
-dfc edit <ULID> [-d <new-desc>] [--details <body>|-] [--json]
+dfc edit <26-char ULID> [-d <new-desc>] [--details <body>|-] [--json]
 ```
 
 - `-d, --description`: rename the heading (and the on-disk file).
 - `--details`: replace the body. `-` reads from stdin.
 - At least one of the two must be supplied.
 
-### `dfc rm <id>` — soft-delete a task
+### `dfc rm <26-char ULID>` — soft-delete a task
 
 ```
 dfc rm <26-char ULID> [--json]
