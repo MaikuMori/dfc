@@ -49,7 +49,11 @@ snapshot:
   version_template: "{{ .Version }}-unreleased+{{ .ShortCommit }}"
 
 changelog:
-  disable: true
+  # Don't set `disable: true` — it skips the whole changelog pipe, including
+  # the --release-notes file loader, so the published body ends up empty.
+  # Passing --release-notes=<file> already short-circuits the git-log
+  # changelog generation (changelog.go:73).
+  use: git
 
 nfpms:
   - id: dfc
