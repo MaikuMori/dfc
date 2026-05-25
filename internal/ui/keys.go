@@ -28,6 +28,8 @@ type keyMap struct {
 	EditExt          key.Binding
 	Delete           key.Binding
 	Undo             key.Binding
+	Yank             key.Binding
+	YankPath         key.Binding
 	Expand           key.Binding
 	Search           key.Binding
 	SearchCommit     key.Binding
@@ -65,6 +67,8 @@ var keys = keyMap{
 	Toggle:           key.NewBinding(key.WithKeys("space"), key.WithHelp("␣", "toggle")),
 	Delete:           key.NewBinding(key.WithKeys("D"), key.WithHelp("D", "delete")),
 	Undo:             key.NewBinding(key.WithKeys("u"), key.WithHelp("u", "undo delete")),
+	Yank:             key.NewBinding(key.WithKeys("y"), key.WithHelp("y", "yank id")),
+	YankPath:         key.NewBinding(key.WithKeys("Y"), key.WithHelp("Y", "yank path")),
 
 	Search:       key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "search")),
 	SearchCommit: key.NewBinding(key.WithKeys("enter"), key.WithHelp("↵", "apply")),
@@ -99,7 +103,7 @@ func (k keyMap) ShortHelp() []key.Binding {
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.PageUp, k.PageDn, k.Top, k.Bottom, k.Expand},
-		{k.Capture, k.NewlineInCapture, k.Edit, k.EditExt, k.Toggle, k.Delete, k.Undo},
+		{k.Capture, k.NewlineInCapture, k.Edit, k.EditExt, k.Toggle, k.Delete, k.Undo, k.Yank, k.YankPath},
 		{k.Search, k.SearchCommit, k.SearchClear},
 		{k.Switch, k.PickerRename, k.PickerSetPrefix, k.PickerDelete, k.Global, k.Sort, k.Filter},
 		{k.Help, k.Quit},

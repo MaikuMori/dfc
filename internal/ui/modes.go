@@ -438,6 +438,22 @@ func (m Model) updateList(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case key.Matches(msg, keys.Yank):
+		if len(m.tasks) == 0 {
+			return m, nil
+		}
+		id := m.tasks[m.cursor].ID
+		m.status = "copied id " + id
+		return m, tea.SetClipboard(id)
+
+	case key.Matches(msg, keys.YankPath):
+		if len(m.tasks) == 0 {
+			return m, nil
+		}
+		path := m.tasks[m.cursor].Path
+		m.status = "copied path"
+		return m, tea.SetClipboard(path)
+
 	case key.Matches(msg, keys.Switch):
 		cmd, ok := m.openProjectSwitcher("")
 		if !ok {
