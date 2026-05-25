@@ -498,7 +498,7 @@ func (m Model) updateSearch(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.input.Placeholder = "task description"
 		return m.reloadActive(), nil
 	}
-	if msg.Code == tea.KeyEnter {
+	if isEnter(msg) {
 		m.exitInput()
 		m.input.Placeholder = "task description"
 		return m, nil
@@ -556,7 +556,7 @@ func (m Model) updateCapture(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.exitInput()
 		return m, nil
 
-	case msg.Code == tea.KeyEnter && msg.Mod == 0:
+	case isEnter(msg) && msg.Mod == 0:
 		text := strings.TrimRight(m.capArea.Value(), " \t\n")
 		if strings.TrimSpace(text) == "" {
 			m.exitInput()

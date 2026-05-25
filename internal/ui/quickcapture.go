@@ -35,7 +35,7 @@ func (m quickCaptureModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Plain (unmodified) Enter submits. Any modifier (alt/shift/ctrl)
 		// falls through so the textarea's rebound InsertNewline binding
 		// can insert a newline instead.
-		if k.Code == tea.KeyEnter && k.Mod == 0 {
+		if isEnter(k) && k.Mod == 0 {
 			m.result = strings.TrimRight(m.input.Value(), " \t\n")
 			m.ok = strings.TrimSpace(m.result) != ""
 			return m, tea.Quit

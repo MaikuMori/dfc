@@ -4,7 +4,15 @@ import (
 	"strings"
 
 	"charm.land/bubbles/v2/key"
+	tea "charm.land/bubbletea/v2"
 )
+
+// isEnter returns true for the main Enter key and the numeric keypad's
+// Enter. Bubbletea v2 reports them as distinct key codes, so a bare
+// `msg.Code == tea.KeyEnter` check would silently ignore numpad Enter.
+func isEnter(msg tea.KeyPressMsg) bool {
+	return msg.Code == tea.KeyEnter || msg.Code == tea.KeyKpEnter
+}
 
 type keyMap struct {
 	Up               key.Binding
