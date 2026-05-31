@@ -562,8 +562,10 @@ func (c *Core) MoveTask(t storage.Task, destSlug string) (storage.Task, error) {
 		return t, err
 	}
 	c.upsertIndex(moved)
+	// The move is already on disk and in the index; a recency-bump failure
+	// must not report a completed move as failed.
 	if err := c.reg.Touch(destSlug); err != nil {
-		return moved, err
+		c.warn("update project recency", err)
 	}
 	return moved, nil
 }
