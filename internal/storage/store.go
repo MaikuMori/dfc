@@ -3,6 +3,7 @@ package storage
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -42,19 +43,65 @@ func (s *Store) Create(t Task, filenameSlug string) (Task, error) {
 	if filenameSlug == "" {
 		return t, errors.New("missing filename slug")
 	}
-	t.Path = s.pathFor(filenameSlug)
 	b, err := Marshal(t)
 	if err != nil {
 		return t, err
 	}
-	if err := os.WriteFile(t.Path, b, 0o644); err != nil {
-		return t, fmt.Errorf("could not write %s: %w", t.Path, err)
+	path, err := s.createUnique(filenameSlug, t.ID, b)
+	if err != nil {
+		return t, err
 	}
+	t.Path = path
 	if err := stampMtime(&t); err != nil {
 		return t, err
 	}
 	s.tagOwn(&t)
 	return t, nil
+}
+
+// createUnique writes b to a fresh file for filenameSlug, never overwriting an
+// existing task. A filename's leading 10 characters are only the ULID's
+// timestamp, and capture truncates that timestamp to the second, so two
+// captures in one project in the same second with the same description would
+// otherwise collide and the second would clobber the first. On collision it
+// retries with a disambiguator drawn from the ULID's random suffix, which
+// keeps the file matchable by FindByID's "<timestamp>-*.md" glob.
+func (s *Store) createUnique(filenameSlug, id string, b []byte) (string, error) {
+	for _, slug := range candidateSlugs(filenameSlug, id) {
+		path := s.pathFor(slug)
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+		if errors.Is(err, fs.ErrExist) {
+			continue
+		}
+		if err != nil {
+			return "", fmt.Errorf("could not write %s: %w", path, err)
+		}
+		if _, err := f.Write(b); err != nil {
+			f.Close()
+			return "", fmt.Errorf("could not write %s: %w", path, err)
+		}
+		if err := f.Close(); err != nil {
+			return "", fmt.Errorf("could not write %s: %w", path, err)
+		}
+		return path, nil
+	}
+	return "", fmt.Errorf("could not find a free filename for %s", filenameSlug)
+}
+
+// candidateSlugs returns the filename stems to try for a new task: the plain
+// slug first, then the slug with progressively longer suffixes from the ULID's
+// random portion. The last candidate carries the full random suffix, which is
+// unique to the task and therefore always free.
+func candidateSlugs(base, id string) []string {
+	out := []string{base}
+	if len(id) <= 10 {
+		return out
+	}
+	tail := strings.ToLower(id[10:])
+	for n := 4; n < len(tail); n += 4 {
+		out = append(out, base+"-"+tail[:n])
+	}
+	return append(out, base+"-"+tail)
 }
 
 // Save overwrites the task file at t.Path and refreshes t.Modified from the

@@ -7,6 +7,42 @@ import (
 	"time"
 )
 
+func TestCreateDisambiguatesSameSecondCollision(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(EnvRoot, root)
+	s, err := Open("p")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now().UTC().Truncate(time.Second)
+	const slug = "0123456789-dup"
+	a, err := s.Create(Task{ID: "0123456789ABCDEFGHJKMNPQRS", Status: StatusOpen, Created: now, Description: "dup"}, slug)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := s.Create(Task{ID: "0123456789ZYXWVTSRQPNMKJHG", Status: StatusOpen, Created: now, Description: "dup"}, slug)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if a.Path == b.Path {
+		t.Fatalf("both tasks landed at %s; first was overwritten", a.Path)
+	}
+	list, err := s.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 2 {
+		t.Fatalf("List len = %d, want 2", len(list))
+	}
+	for _, id := range []string{a.ID, b.ID} {
+		if p, err := s.FindByID(id); err != nil || p == "" {
+			t.Errorf("FindByID(%s) = %q, %v; want a path", id, p, err)
+		}
+	}
+}
+
 func TestStoreCRUD(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv(EnvRoot, root)
