@@ -116,7 +116,7 @@ func (m *Model) moveCursor(delta int) {
 		return
 	}
 	prev := m.cursor
-	m.cursor = clamp(m.cursor+delta, 0, len(m.tasks)-1)
+	m.cursor = max(0, min(m.cursor+delta, len(m.tasks)-1))
 	if m.cursor == prev {
 		// Already at the edge (first/last task). Don't re-anchor the
 		// viewport — that would yank a long expansion back to its top.
@@ -281,14 +281,4 @@ func replaceByID(tasks []storage.Task, t storage.Task) []storage.Task {
 		}
 	}
 	return append(tasks, t)
-}
-
-func clamp(v, lo, hi int) int {
-	if v < lo {
-		return lo
-	}
-	if v > hi {
-		return hi
-	}
-	return v
 }
