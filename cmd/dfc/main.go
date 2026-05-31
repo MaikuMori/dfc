@@ -17,6 +17,7 @@ func main() {
 		kong.Name("dfc"),
 		kong.Description("Quick-capture task CLI."),
 		kong.UsageOnError(),
+		kong.Vars{"version": cli.VersionString()},
 	)
 
 	// When the shell invokes us for completion (COMP_LINE set), serve
@@ -28,11 +29,6 @@ func main() {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
-		return
-	}
-
-	if os.Args[1] == "--version" {
-		fmt.Println(cli.VersionString())
 		return
 	}
 

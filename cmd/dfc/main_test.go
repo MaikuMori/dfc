@@ -8,6 +8,22 @@ import (
 	"github.com/willabides/kongplete"
 )
 
+func TestVersionFlagWorksAfterSubcommand(t *testing.T) {
+	var root cli.CLI
+	exited := -1
+	parser := kong.Must(&root,
+		kong.Name("dfc"),
+		kong.Vars{"version": "dfc test"},
+		kong.Exit(func(code int) { exited = code }),
+	)
+	if _, err := parser.Parse([]string{"s", "--version"}); err != nil {
+		t.Fatalf("parse `s --version`: %v", err)
+	}
+	if exited != 0 {
+		t.Errorf("`s --version` should fire the version flag (exit 0), got exit %d", exited)
+	}
+}
+
 // TestMirrorAliasesExposesEveryAlias guards against a kongplete regression
 // where node aliases get dropped from the completion tree (the original
 // issue: `dfc c -p <TAB>` returned subcommand names instead of slugs).

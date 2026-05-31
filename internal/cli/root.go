@@ -1,7 +1,11 @@
 package cli
 
+import "github.com/alecthomas/kong"
+
 // CLI is the kong-parsed root.
 type CLI struct {
+	VersionFlag kong.VersionFlag `name:"version" help:"Print version information and exit."`
+
 	Capture CaptureCmd       `cmd:"" aliases:"c" help:"Capture a task. With no description, opens an inline prompt."`
 	Cc      GlobalCaptureCmd `cmd:"" help:"Fuzzy-pick a project, then capture into it."`
 	Ls      LsCmd            `cmd:"" aliases:"list" help:"List tasks (cwd project by default)."`
