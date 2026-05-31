@@ -12,6 +12,7 @@ type CLI struct {
 	Search     SearchCmd        `cmd:"" aliases:"s" help:"Full-text search in the current project (or -p/-a to override)."`
 	Ss         SsCmd            `cmd:"" help:"Full-text search across every project."`
 	Show       ShowCmd          `cmd:"" help:"Show a single task by full ULID."`
+	Count      CountCmd         `cmd:"" help:"Report task counts (for shell-prompt / tmux integration)."`
 	Done       DoneCmd          `cmd:"" help:"Mark a task done."`
 	Reopen     ReopenCmd        `cmd:"" help:"Mark a task open again."`
 	Edit       EditCmd          `cmd:"" help:"Edit a task's description and/or details."`

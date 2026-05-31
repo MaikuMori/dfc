@@ -1,0 +1,3 @@
+kind: added
+body: 'CLI: `dfc count [--format prompt|json]` reports open/done task counts for shell-prompt and tmux integration.'
+time: 2026-05-31T18:56:11.187089-04:00
