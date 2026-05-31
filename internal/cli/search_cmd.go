@@ -6,10 +6,11 @@ import (
 	"os"
 	"strings"
 
-	"github.com/MaikuMori/dfc/internal/index"
-	"github.com/MaikuMori/dfc/internal/project"
 	"github.com/muesli/reflow/wordwrap"
 	"golang.org/x/term"
+
+	"github.com/MaikuMori/dfc/internal/index"
+	"github.com/MaikuMori/dfc/internal/project"
 )
 
 // SearchCmd queries the FTS5-backed index. Default scope is the cwd's
@@ -286,4 +287,3 @@ func countProjects(hits []index.SearchHit) int {
 	}
 	return len(seen)
 }
-

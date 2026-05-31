@@ -145,10 +145,11 @@ func frontmatterID(b []byte) (string, error) {
 
 // splitBody extracts the description and details from the markdown body via
 // a goldmark AST. Priority for the description:
-//   1. The first level-1 heading (`# ...`).
-//   2. Any heading at another level (h2..h6, including setext underline form).
-//   3. The first line of the first paragraph (covers files where an external
-//      editor stripped the `#`).
+//  1. The first level-1 heading (`# ...`).
+//  2. Any heading at another level (h2..h6, including setext underline form).
+//  3. The first line of the first paragraph (covers files where an external
+//     editor stripped the `#`).
+//
 // Details are the body content from the line after the picked node onward,
 // with one leading blank line trimmed (Marshal inserts one separating blank
 // line above details).

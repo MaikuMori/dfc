@@ -4,11 +4,12 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/MaikuMori/dfc/internal/cli"
-	"github.com/MaikuMori/dfc/internal/ui"
 	"github.com/alecthomas/kong"
 	"github.com/posener/complete"
 	"github.com/willabides/kongplete"
+
+	"github.com/MaikuMori/dfc/internal/cli"
+	"github.com/MaikuMori/dfc/internal/ui"
 )
 
 func main() {

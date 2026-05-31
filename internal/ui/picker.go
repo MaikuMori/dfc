@@ -8,9 +8,10 @@ import (
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+	"github.com/sahilm/fuzzy"
+
 	"github.com/MaikuMori/dfc/internal/index"
 	"github.com/MaikuMori/dfc/internal/project"
-	"github.com/sahilm/fuzzy"
 )
 
 // ProjectPickerItems builds picker rows for every project in reg, ordered

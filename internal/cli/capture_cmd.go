@@ -7,11 +7,12 @@ import (
 	"os"
 	"strings"
 
+	"golang.org/x/term"
+
 	"github.com/MaikuMori/dfc/internal/capture"
 	"github.com/MaikuMori/dfc/internal/core"
 	"github.com/MaikuMori/dfc/internal/project"
 	"github.com/MaikuMori/dfc/internal/ui"
-	"golang.org/x/term"
 )
 
 // CaptureCmd writes a new task.
@@ -126,4 +127,3 @@ func resolveCaptureTarget(explicit string) (slug, displayName string, err error)
 	}
 	return resolved.Slug, project.DeriveName(resolved), nil
 }
-

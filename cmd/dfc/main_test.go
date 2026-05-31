@@ -3,9 +3,10 @@ package main
 import (
 	"testing"
 
-	"github.com/MaikuMori/dfc/internal/cli"
 	"github.com/alecthomas/kong"
 	"github.com/willabides/kongplete"
+
+	"github.com/MaikuMori/dfc/internal/cli"
 )
 
 func TestVersionFlagWorksAfterSubcommand(t *testing.T) {

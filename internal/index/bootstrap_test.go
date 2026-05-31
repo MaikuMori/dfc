@@ -7,8 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MaikuMori/dfc/internal/storage"
 	"github.com/oklog/ulid/v2"
+
+	"github.com/MaikuMori/dfc/internal/storage"
 )
 
 // writeTask drops a real task file under the DFC root so Bootstrap and

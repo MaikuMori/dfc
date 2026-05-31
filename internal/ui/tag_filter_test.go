@@ -9,9 +9,10 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/mattn/go-runewidth"
+
 	"github.com/MaikuMori/dfc/internal/core"
 	"github.com/MaikuMori/dfc/internal/storage"
-	"github.com/mattn/go-runewidth"
 )
 
 // newTagModel boots a Model under a fresh DFC_ROOT, seeds three
@@ -173,7 +174,7 @@ func TestModel_HeaderShowsLivePreviewCount(t *testing.T) {
 	m.tagFilterBase, _ = m.core.ListAll()
 
 	// Before any selection: header should still report the full count (3).
-	if got := m.header(); !strings.Contains(got,"all (3)") {
+	if got := m.header(); !strings.Contains(got, "all (3)") {
 		t.Errorf("pre-select header should show all (3), got %q", got)
 	}
 
@@ -181,16 +182,16 @@ func TestModel_HeaderShowsLivePreviewCount(t *testing.T) {
 	// directly (the public path is space-toggle, but we bypass to keep
 	// the test focused on the header math).
 	m.picker.PreselectMany([]string{"work"})
-	if got := m.header(); !strings.Contains(got,"all (2)") {
+	if got := m.header(); !strings.Contains(got, "all (2)") {
 		t.Errorf("after selecting 'work', header should show all (2), got %q", got)
 	}
-	if got := m.header(); !strings.Contains(got,"filter: [work]") {
+	if got := m.header(); !strings.Contains(got, "filter: [work]") {
 		t.Errorf("header should advertise the in-flight filter: %q", got)
 	}
 
 	// Switch to (untagged) only.
 	m.picker.PreselectMany([]string{"(untagged)"})
-	if got := m.header(); !strings.Contains(got,"all (1)") {
+	if got := m.header(); !strings.Contains(got, "all (1)") {
 		t.Errorf("(untagged) projection should yield 1 task, got %q", got)
 	}
 }
@@ -260,11 +261,10 @@ func TestModel_HeaderPostCommitCount(t *testing.T) {
 	// Mimic updateTagFilter's commit branch.
 	m.tagFilter = []string{"work"}
 	m = m.reloadAll()
-	if got := m.header(); !strings.Contains(got,"all (2)") {
+	if got := m.header(); !strings.Contains(got, "all (2)") {
 		t.Errorf("post-commit header should show filtered count: %q", got)
 	}
-	if got := m.header(); !strings.Contains(got,"filter: [work]") {
+	if got := m.header(); !strings.Contains(got, "filter: [work]") {
 		t.Errorf("post-commit header should advertise the filter: %q", got)
 	}
 }
-

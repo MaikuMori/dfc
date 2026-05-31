@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"os"
 
+	"golang.org/x/term"
+
 	"github.com/MaikuMori/dfc/internal/capture"
 	"github.com/MaikuMori/dfc/internal/core"
 	"github.com/MaikuMori/dfc/internal/ui"
-	"golang.org/x/term"
 )
 
 // GlobalCaptureCmd is `dfc cc`: pick any known project via a fuzzy filter,

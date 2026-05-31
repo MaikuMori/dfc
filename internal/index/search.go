@@ -119,12 +119,12 @@ func (i *Index) Search(q string, opts SearchOpts) ([]SearchHit, error) {
 	var hits []SearchHit
 	for rows.Next() {
 		var (
-			t          storage.Task
+			t           storage.Task
 			createdUnix int64
-			modUnix    int64
-			score      float64
-			snippet    sql.NullString
-			statusSt   string
+			modUnix     int64
+			score       float64
+			snippet     sql.NullString
+			statusSt    string
 		)
 		if err := rows.Scan(
 			&t.ID, &t.ProjectSlug, &t.Path, &statusSt,

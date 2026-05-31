@@ -6,14 +6,15 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/MaikuMori/dfc/internal/capture"
-	"github.com/MaikuMori/dfc/internal/core"
-	"github.com/MaikuMori/dfc/internal/project"
-	"github.com/MaikuMori/dfc/internal/storage"
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/textarea"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+
+	"github.com/MaikuMori/dfc/internal/capture"
+	"github.com/MaikuMori/dfc/internal/core"
+	"github.com/MaikuMori/dfc/internal/project"
+	"github.com/MaikuMori/dfc/internal/storage"
 )
 
 func (m Model) updateCaptureTarget(msg tea.Msg) (tea.Model, tea.Cmd) {

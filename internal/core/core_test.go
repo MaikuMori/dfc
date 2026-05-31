@@ -739,4 +739,3 @@ type indexSearchOptsAlias = struct {
 	Limit    int
 	SortBy   string
 }
-

@@ -450,4 +450,3 @@ func (r *Registry) Slugs() []string {
 	slices.Sort(out)
 	return out
 }
-

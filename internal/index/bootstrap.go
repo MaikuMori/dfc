@@ -248,4 +248,3 @@ func countMarkdown(dir string) int {
 	}
 	return n
 }
-

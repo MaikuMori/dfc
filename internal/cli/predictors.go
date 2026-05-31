@@ -7,10 +7,11 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/posener/complete"
+
 	"github.com/MaikuMori/dfc/internal/project"
 	"github.com/MaikuMori/dfc/internal/storage"
 	"github.com/MaikuMori/dfc/internal/trash"
-	"github.com/posener/complete"
 )
 
 // EnvCompleteFormat selects how predictor output is rendered. The default

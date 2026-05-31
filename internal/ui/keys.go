@@ -81,10 +81,10 @@ var keys = keyMap{
 	PickerToggleTag: key.NewBinding(key.WithKeys(" "), key.WithHelp("␣", "toggle")),
 	PickerNewTag:    key.NewBinding(key.WithKeys("ctrl+n"), key.WithHelp("^n", "new tag")),
 	PickerClearTags: key.NewBinding(key.WithKeys("ctrl+l"), key.WithHelp("^l", "clear")),
-	PickerRename: key.NewBinding(key.WithKeys("ctrl+r"), key.WithHelp("^r", "rename")),
+	PickerRename:    key.NewBinding(key.WithKeys("ctrl+r"), key.WithHelp("^r", "rename")),
 	PickerSetPrefix: key.NewBinding(key.WithKeys("ctrl+p"), key.WithHelp("^p", "set prefix")),
-	PickerDelete: key.NewBinding(key.WithKeys("ctrl+shift+d"), key.WithHelp("^⇧d", "delete project")),
-	Global:       key.NewBinding(key.WithKeys("A"), key.WithHelp("A", "all")),
+	PickerDelete:    key.NewBinding(key.WithKeys("ctrl+shift+d"), key.WithHelp("^⇧d", "delete project")),
+	Global:          key.NewBinding(key.WithKeys("A"), key.WithHelp("A", "all")),
 
 	Help:    key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
 	Confirm: key.NewBinding(key.WithKeys("enter"), key.WithHelp("↵", "save")),

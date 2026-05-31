@@ -3,9 +3,10 @@ package ui
 import (
 	"errors"
 
+	tea "charm.land/bubbletea/v2"
+
 	"github.com/MaikuMori/dfc/internal/core"
 	"github.com/MaikuMori/dfc/internal/watch"
-	tea "charm.land/bubbletea/v2"
 )
 
 // fsChangedMsg is delivered when the watched project directory has had at

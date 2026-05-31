@@ -13,11 +13,11 @@ import (
 // TagsCmd groups the project-tag management subcommands. With no
 // subcommand, prints the current project's tags (default shape).
 type TagsCmd struct {
-	Show   TagsShowCmd   `cmd:"" default:"withargs" help:"Show a project's tags (default: cwd project)."`
-	Add    TagsAddCmd    `cmd:"" help:"Add one or more tags to a project."`
-	Rm     TagsRmCmd     `cmd:"" help:"Remove one or more tags from a project."`
-	Set    TagsSetCmd    `cmd:"" help:"Replace a project's full tag list."`
-	Ls     TagsLsCmd     `cmd:"" aliases:"list" help:"List every distinct tag across the registry."`
+	Show TagsShowCmd `cmd:"" default:"withargs" help:"Show a project's tags (default: cwd project)."`
+	Add  TagsAddCmd  `cmd:"" help:"Add one or more tags to a project."`
+	Rm   TagsRmCmd   `cmd:"" help:"Remove one or more tags from a project."`
+	Set  TagsSetCmd  `cmd:"" help:"Replace a project's full tag list."`
+	Ls   TagsLsCmd   `cmd:"" aliases:"list" help:"List every distinct tag across the registry."`
 }
 
 // TagsShowCmd prints the project's tag list.

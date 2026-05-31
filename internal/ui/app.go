@@ -4,12 +4,13 @@ import (
 	"errors"
 	"os"
 
+	tea "charm.land/bubbletea/v2"
+	"golang.org/x/term"
+
 	"github.com/MaikuMori/dfc/internal/core"
 	"github.com/MaikuMori/dfc/internal/project"
 	"github.com/MaikuMori/dfc/internal/storage"
 	"github.com/MaikuMori/dfc/internal/watch"
-	tea "charm.land/bubbletea/v2"
-	"golang.org/x/term"
 )
 
 // Run launches the TUI bound to the current working directory's project. It

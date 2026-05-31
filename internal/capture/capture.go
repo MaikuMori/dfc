@@ -6,8 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/MaikuMori/dfc/internal/storage"
 	"github.com/oklog/ulid/v2"
+
+	"github.com/MaikuMori/dfc/internal/storage"
 )
 
 // SplitHeading splits a captured text buffer into a heading and a body.

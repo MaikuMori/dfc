@@ -6,9 +6,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/posener/complete"
+
 	"github.com/MaikuMori/dfc/internal/core"
 	"github.com/MaikuMori/dfc/internal/storage"
-	"github.com/posener/complete"
 )
 
 func TestScopeFromArgs(t *testing.T) {

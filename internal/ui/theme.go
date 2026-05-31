@@ -32,7 +32,7 @@ var (
 )
 
 var (
-	styleOpen   = lipgloss.NewStyle().Foreground(colorFg)
+	styleOpen = lipgloss.NewStyle().Foreground(colorFg)
 	// Done description: italic + muted, no strikethrough. The check mark
 	// glyph carries the "done" signal; the italic + dim gives a calm visual
 	// recede without making the words illegible.

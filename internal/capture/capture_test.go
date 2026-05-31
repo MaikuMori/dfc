@@ -61,10 +61,10 @@ func TestNew_EmptyDescription(t *testing.T) {
 
 func TestSplitHeading(t *testing.T) {
 	cases := []struct {
-		name      string
-		in        string
-		wantHead  string
-		wantBody  string
+		name     string
+		in       string
+		wantHead string
+		wantBody string
 	}{
 		{"empty", "", "", ""},
 		{"blank only", "   \n\t\n", "", ""},

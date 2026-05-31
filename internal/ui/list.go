@@ -5,9 +5,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/MaikuMori/dfc/internal/storage"
 	"github.com/mattn/go-runewidth"
 	"github.com/muesli/reflow/wordwrap"
+
+	"github.com/MaikuMori/dfc/internal/storage"
 )
 
 // glamour rendering for the expanded task is by far the most expensive

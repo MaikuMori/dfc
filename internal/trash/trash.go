@@ -20,9 +20,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/oklog/ulid/v2"
+
 	"github.com/MaikuMori/dfc/internal/fsutil"
 	"github.com/MaikuMori/dfc/internal/storage"
-	"github.com/oklog/ulid/v2"
 )
 
 // DefaultTTL is the retention window for trashed entries. Anything older
@@ -44,12 +45,12 @@ type Manifest struct {
 	ID          string    `json:"id"`
 	Kind        Kind      `json:"kind"`
 	Slug        string    `json:"slug"`
-	Name        string    `json:"name,omitempty"`         // project display name (kind=project)
-	Prefix      string    `json:"prefix,omitempty"`       // custom display prefix (kind=project)
-	Tags        []string  `json:"tags,omitempty"`         // categorical tags (kind=project)
-	TaskID      string    `json:"task_id,omitempty"`      // ULID of the trashed task (kind=task)
-	Description string    `json:"description,omitempty"`  // task heading (kind=task)
-	Filename    string    `json:"filename,omitempty"`     // basename inside project dir (kind=task)
+	Name        string    `json:"name,omitempty"`        // project display name (kind=project)
+	Prefix      string    `json:"prefix,omitempty"`      // custom display prefix (kind=project)
+	Tags        []string  `json:"tags,omitempty"`        // categorical tags (kind=project)
+	TaskID      string    `json:"task_id,omitempty"`     // ULID of the trashed task (kind=task)
+	Description string    `json:"description,omitempty"` // task heading (kind=task)
+	Filename    string    `json:"filename,omitempty"`    // basename inside project dir (kind=task)
 	DeletedAt   time.Time `json:"deleted_at"`
 }
 

@@ -4,13 +4,14 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/MaikuMori/dfc/internal/core"
-	"github.com/MaikuMori/dfc/internal/storage"
-	"github.com/MaikuMori/dfc/internal/watch"
 	"charm.land/bubbles/v2/textarea"
 	"charm.land/bubbles/v2/textinput"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
+
+	"github.com/MaikuMori/dfc/internal/core"
+	"github.com/MaikuMori/dfc/internal/storage"
+	"github.com/MaikuMori/dfc/internal/watch"
 )
 
 type mode int
@@ -55,8 +56,8 @@ type Model struct {
 	watchSub     <-chan watch.Event
 
 	globalView    bool
-	capTargetSlug string // set transiently when capturing into a picker-chosen project; "" = current store
-	lastBody      string // last body string handed to viewport.SetContent — used to skip redundant re-splits
+	capTargetSlug string         // set transiently when capturing into a picker-chosen project; "" = current store
+	lastBody      string         // last body string handed to viewport.SetContent — used to skip redundant re-splits
 	searchQuery   string         // active filter; "" = no filter
 	searchBase    []storage.Task // no-index fallback corpus, snapshotted on search entry
 	sortKey       sortKey
@@ -87,15 +88,15 @@ func New(cr *core.Core, slug string, store *storage.Store, initial []storage.Tas
 		cursor = len(tasks) - 1
 	}
 	return Model{
-		core:      cr,
-		slug:      slug,
-		store:     store,
-		tasks:     tasks,
-		cursor:    cursor,
-		mode:      modeList,
-		input:     ti,
-		capArea:   newCaptureArea("task description"),
-		viewport:  viewport.New(),
+		core:     cr,
+		slug:     slug,
+		store:    store,
+		tasks:    tasks,
+		cursor:   cursor,
+		mode:     modeList,
+		input:    ti,
+		capArea:  newCaptureArea("task description"),
+		viewport: viewport.New(),
 		watcher:  watcher,
 		watchSub: subscribeIfLive(watcher),
 	}
