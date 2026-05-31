@@ -592,12 +592,6 @@ func (p *Picker) SetWidth(w int) {
 	p.input.SetWidth(w - 2) // subtract prompt width
 }
 
-// Renaming reports whether the picker is currently in rename mode.
-func (p Picker) Renaming() bool { return p.edit == editRename }
-
-// SettingPrefix reports whether the picker is currently in prefix-edit mode.
-func (p Picker) SettingPrefix() bool { return p.edit == editPrefix }
-
 // EditingInput reports whether the picker has opened an inline text-
 // input sub-mode (rename, set-prefix, or new-item-prompt). Callers use
 // this to swap the outer footer hints for plain input hints (the picker

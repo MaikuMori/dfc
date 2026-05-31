@@ -60,16 +60,6 @@ func timeForKey(t storage.Task, key sortKey) time.Time {
 	return t.Modified
 }
 
-// indexByID returns the index of the task with the given id, or -1.
-func indexByID(tasks []storage.Task, id string) int {
-	for i, t := range tasks {
-		if t.ID == id {
-			return i
-		}
-	}
-	return -1
-}
-
 // indexByIDSlug locates a task by id, optionally also matching ProjectSlug
 // (when slugQualified is true — used in global view to defend against a
 // theoretical ULID collision across projects).

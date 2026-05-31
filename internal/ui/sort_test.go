@@ -69,10 +69,10 @@ func TestSortKeyCycleAndLabel(t *testing.T) {
 
 func TestIndexByID(t *testing.T) {
 	tasks := []storage.Task{{ID: "a"}, {ID: "b"}, {ID: "c"}}
-	if indexByID(tasks, "b") != 1 {
+	if indexByIDSlug(tasks, "b", "", false) != 1 {
 		t.Error("expected 1")
 	}
-	if indexByID(tasks, "z") != -1 {
+	if indexByIDSlug(tasks, "z", "", false) != -1 {
 		t.Error("expected -1 for missing")
 	}
 }
