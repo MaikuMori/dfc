@@ -47,6 +47,21 @@ func ProjectDir(slug string) (string, error) {
 	return dir, nil
 }
 
+// ProjectDirPath returns the path to a project's task directory without
+// creating it. Restoring from trash must not pre-create the destination,
+// otherwise the restore's "already exists" guard trips against an empty
+// directory we just made — use this instead of ProjectDir there.
+func ProjectDirPath(slug string) (string, error) {
+	if slug == "" {
+		return "", errors.New("missing project slug")
+	}
+	root := projectsRoot()
+	if root == "" {
+		return "", errors.New("could not resolve dfc data directory")
+	}
+	return filepath.Join(root, slug), nil
+}
+
 // projectsRoot returns ~/.dfc/projects without creating it. Returns ""
 // when the dfc root can't be resolved (which is rare — only on a totally
 // hostile filesystem).

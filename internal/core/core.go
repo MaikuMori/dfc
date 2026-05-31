@@ -441,7 +441,7 @@ func (c *Core) restore(e trash.Entry) (trash.Manifest, error) {
 		return e.Manifest, nil
 
 	case trash.KindProject:
-		dest, err := storage.ProjectDir(e.Slug)
+		dest, err := storage.ProjectDirPath(e.Slug)
 		if err != nil {
 			return trash.Manifest{}, err
 		}

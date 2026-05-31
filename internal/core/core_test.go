@@ -501,6 +501,31 @@ func TestRemoveProjectMovesAllTasks(t *testing.T) {
 	}
 }
 
+func TestProjectUndoRoundTrip(t *testing.T) {
+	cr := newTestCore(t)
+	_, _ = cr.Capture(CaptureInput{Slug: "doomed", Description: "alpha"})
+	_, _ = cr.Capture(CaptureInput{Slug: "doomed", Description: "beta"})
+
+	if _, _, err := cr.RemoveProject("doomed"); err != nil {
+		t.Fatalf("RemoveProject: %v", err)
+	}
+	if storage.ProjectDirExists("doomed") {
+		t.Fatalf("project dir should be gone after RemoveProject")
+	}
+
+	if _, err := cr.Undo(); err != nil {
+		t.Fatalf("Undo after project delete: %v", err)
+	}
+	if !storage.ProjectDirExists("doomed") {
+		t.Fatalf("project dir not restored after Undo")
+	}
+	for _, term := range []string{"alpha", "beta"} {
+		if hits, _ := cr.Search(term, indexAllOpts()); len(hits) != 1 {
+			t.Errorf("restored task %q: got %d hits, want 1", term, len(hits))
+		}
+	}
+}
+
 func TestSaveTaskPersistsAndReindexes(t *testing.T) {
 	cr := newTestCore(t)
 	res, _ := cr.Capture(CaptureInput{Slug: "p", Description: "old details"})
