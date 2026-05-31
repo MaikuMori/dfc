@@ -347,13 +347,13 @@ func (c *Core) RemoveProject(slug string) (removed int, trashID string, err erro
 		if err != nil {
 			return 0, "", err
 		}
+		m, err := trash.TrashProject(slug, c.reg.Name(slug), store.Dir())
+		if err != nil {
+			return 0, "", err
+		}
 		for _, t := range tasks {
 			c.deleteIndex(t.ID)
 			removed++
-		}
-		m, err := trash.TrashProject(slug, c.reg.Name(slug), store.Dir())
-		if err != nil {
-			return removed, "", err
 		}
 		trashID = m.ID
 		c.mu.Lock()
