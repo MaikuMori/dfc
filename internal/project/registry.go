@@ -338,6 +338,9 @@ func (r *Registry) RenameTag(from, to string, merge bool) ([]string, error) {
 	if to == "" {
 		return nil, errors.New("new tag name is empty")
 	}
+	if from == to {
+		return nil, nil // nothing to rewrite (a case-only rename is not byte-equal)
+	}
 	caseChange := strings.EqualFold(from, to)
 
 	var affected []string

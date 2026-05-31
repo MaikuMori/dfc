@@ -89,6 +89,21 @@ func TestRenameTagConflict(t *testing.T) {
 	}
 }
 
+func TestRenameTagSelfNoOp(t *testing.T) {
+	dir := t.TempDir()
+	r, _ := loadRegistryFromPath(filepath.Join(dir, "projects.json"))
+	r.Register("a", "A")
+	_ = r.SetTags("a", []string{"work"})
+
+	slugs, err := r.RenameTag("work", "work", false)
+	if err != nil {
+		t.Fatalf("self-rename: %v", err)
+	}
+	if len(slugs) != 0 {
+		t.Errorf("byte-identical self-rename should be a no-op, affected %v", slugs)
+	}
+}
+
 func TestRenameTagCaseChange(t *testing.T) {
 	dir := t.TempDir()
 	r, _ := loadRegistryFromPath(filepath.Join(dir, "projects.json"))
