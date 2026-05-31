@@ -114,7 +114,10 @@ func (i *Index) SyncStaleSince(cutoff int64) error {
 				continue
 			}
 			info, err := f.Info()
-			if err != nil || info.ModTime().Unix() <= cutoff {
+			if err != nil || info.ModTime().Unix() < cutoff {
+				// Files at exactly the cutoff second are re-synced (Upsert is
+				// idempotent) so a sibling edited in the same second as the
+				// index's newest row isn't missed.
 				continue
 			}
 			if s == nil {

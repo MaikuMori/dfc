@@ -216,12 +216,14 @@ func TestSyncStaleSincePicksUpNewerFiles(t *testing.T) {
 	// Force deterministic mtimes that straddle a known cutoff. Avoids any
 	// real-clock timing dependency on platforms whose filesystem mtime
 	// resolution doesn't match our 1s sleep budget (Windows is the
-	// repeat offender here).
+	// repeat offender here). The cutoff is inclusive: a file at exactly the
+	// cutoff second is re-synced (catching same-second siblings), only
+	// strictly-older files are skipped.
 	cutoff := int64(1_700_000_000)
-	if err := os.Chtimes(old.Path, time.Unix(cutoff, 0), time.Unix(cutoff, 0)); err != nil {
+	if err := os.Chtimes(old.Path, time.Unix(cutoff-10, 0), time.Unix(cutoff-10, 0)); err != nil {
 		t.Fatalf("Chtimes old: %v", err)
 	}
-	if err := os.Chtimes(newOne.Path, time.Unix(cutoff+10, 0), time.Unix(cutoff+10, 0)); err != nil {
+	if err := os.Chtimes(newOne.Path, time.Unix(cutoff, 0), time.Unix(cutoff, 0)); err != nil {
 		t.Fatalf("Chtimes new: %v", err)
 	}
 
