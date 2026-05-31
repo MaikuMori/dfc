@@ -223,17 +223,15 @@ func (s *Store) RenameForDescription(t *Task, newDesc string) error {
 	}
 
 	t.Description = newDesc
-	if err := s.Save(t); err != nil {
-		return err
-	}
-
 	newPath := filepath.Join(s.dir, FilenameSlug(ts, newDesc)+".md")
-	if newPath == t.Path {
-		return nil
+	if newPath != t.Path {
+		if err := renameNoReplace(t.Path, newPath); err != nil {
+			if errors.Is(err, fs.ErrExist) {
+				return fmt.Errorf("a task file already exists at %s", filepath.Base(newPath))
+			}
+			return fmt.Errorf("could not rename %s to %s: %w", t.Path, newPath, err)
+		}
+		t.Path = newPath
 	}
-	if err := os.Rename(t.Path, newPath); err != nil {
-		return fmt.Errorf("could not rename %s to %s: %w", t.Path, newPath, err)
-	}
-	t.Path = newPath
-	return nil
+	return s.Save(t)
 }

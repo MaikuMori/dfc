@@ -1,0 +1,3 @@
+kind: fixed
+body: Editing a task's description no longer overwrites another task that already owns the target filename.
+time: 2026-05-31T00:00:12.362765-04:00

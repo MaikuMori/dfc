@@ -43,6 +43,37 @@ func TestCreateDisambiguatesSameSecondCollision(t *testing.T) {
 	}
 }
 
+func TestRenameForDescriptionRefusesCollision(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(EnvRoot, root)
+	s, err := Open("p")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now().UTC().Truncate(time.Second)
+	a, err := s.Create(Task{ID: "0123456789AAAAAAAAAAAAAAAA", Status: StatusOpen, Created: now, Description: "buy milk"}, "0123456789-buy-milk")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := s.Create(Task{ID: "0123456789BBBBBBBBBBBBBBBB", Status: StatusOpen, Created: now, Description: "walk dog"}, "0123456789-walk-dog")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.RenameForDescription(&b, "buy milk"); err == nil {
+		t.Fatalf("expected a collision error renaming over %s", a.Path)
+	}
+
+	loaded, err := s.Load(a.Path)
+	if err != nil {
+		t.Fatalf("task A was destroyed: %v", err)
+	}
+	if loaded.ID != a.ID {
+		t.Errorf("task A clobbered: id = %s, want %s", loaded.ID, a.ID)
+	}
+}
+
 func TestStoreCRUD(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv(EnvRoot, root)
