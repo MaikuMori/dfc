@@ -3,6 +3,7 @@ package storage
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -96,6 +97,29 @@ func TestListSkipsUnparseableFile(t *testing.T) {
 	}
 	if len(list) != 1 || list[0].Description != "good" {
 		t.Fatalf("List = %+v, want only the good task", list)
+	}
+}
+
+func TestFindByIDIsCaseInsensitive(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(EnvRoot, root)
+	s, err := Open("p")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now().UTC().Truncate(time.Second)
+	id := "0123456789ABCDEFGHJKMNPQRS"
+	if _, err := s.Create(Task{ID: id, Status: StatusOpen, Created: now, Description: "find me"}, FilenameSlug(id[:10], "find me")); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := s.FindByID(strings.ToLower(id))
+	if err != nil {
+		t.Fatalf("FindByID: %v", err)
+	}
+	if got == "" {
+		t.Errorf("FindByID(lowercased ULID) returned empty; want the task path")
 	}
 }
 

@@ -212,7 +212,7 @@ func (s *Store) FindByID(id string) (string, error) {
 		if err != nil {
 			continue
 		}
-		if t.ID == id {
+		if strings.EqualFold(t.ID, id) {
 			return p, nil
 		}
 	}
