@@ -249,7 +249,7 @@ func (m *Model) relayout() {
 		if w := m.width - 2; w > 0 {
 			m.input.SetWidth(w)
 		}
-	case modeSwitch, modeCaptureTarget, modeHelp:
+	case modeSwitch, modeCaptureTarget, modeTagEdit, modeTagFilter, modeHelp:
 		// Picker or help takes over the body; viewport doesn't need to be
 		// sized to anything sensible.
 		listHeight = 0
@@ -262,11 +262,22 @@ func (m *Model) relayout() {
 	}
 	m.viewport.SetWidth(m.width)
 	m.viewport.SetHeight(listHeight)
-	if m.mode != modeSwitch && m.mode != modeCaptureTarget {
+	if !m.isPickerMode() {
 		body, _ := renderList(*m, m.width, listHeight)
 		m.setViewportBody(body)
 	}
 	m.followCursor()
+}
+
+// isPickerMode reports whether m.picker is overlaying the body — so the task
+// list shouldn't render under it and the picker should be width-sized to the
+// screen. modeHelp also takes over the body but has no picker to size.
+func (m Model) isPickerMode() bool {
+	switch m.mode {
+	case modeSwitch, modeCaptureTarget, modeTagEdit, modeTagFilter:
+		return true
+	}
+	return false
 }
 
 // replaceByID returns a new slice where the task with id == t.ID is replaced

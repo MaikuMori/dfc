@@ -1,0 +1,3 @@
+kind: fixed
+body: The tag-edit and tag-filter pickers now size to the terminal width.
+time: 2026-05-31T00:51:49.165212-04:00

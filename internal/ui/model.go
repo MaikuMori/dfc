@@ -226,7 +226,7 @@ func (m Model) View() tea.View {
 	b.WriteString(m.header())
 	b.WriteByte('\n')
 
-	if m.mode == modeSwitch || m.mode == modeCaptureTarget || m.mode == modeTagEdit || m.mode == modeTagFilter {
+	if m.isPickerMode() {
 		pickerView := m.picker.View()
 		var hintText string
 		switch {

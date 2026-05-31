@@ -178,6 +178,19 @@ func TestRunSearch_GlobalViewRespectsTagFilter(t *testing.T) {
 	}
 }
 
+func TestIsPickerMode(t *testing.T) {
+	for _, md := range []mode{modeSwitch, modeCaptureTarget, modeTagEdit, modeTagFilter} {
+		if !(Model{mode: md}).isPickerMode() {
+			t.Errorf("mode %v should be a picker mode", md)
+		}
+	}
+	for _, md := range []mode{modeList, modeCapture, modeEdit, modeSearch, modeHelp} {
+		if (Model{mode: md}).isPickerMode() {
+			t.Errorf("mode %v should not be a picker mode", md)
+		}
+	}
+}
+
 func TestEscClearsTagFilter(t *testing.T) {
 	m := newTagModel(t)
 	m.tagFilter = []string{"work"}
