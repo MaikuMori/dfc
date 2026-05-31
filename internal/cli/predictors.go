@@ -206,6 +206,10 @@ func predictTasksFn(filter taskFilter) func(complete.Args) []string {
 	}
 }
 
+// Completion predictors deliberately read trash/storage/project directly
+// rather than through core.Core. A TAB press must stay fast, and opening a
+// full Core would also open the search index and run a trash sweep — so this
+// is the sanctioned read-only exception to the "access goes through core" rule.
 func predictTrashIDs(_ complete.Args) []string {
 	entries, err := trash.List()
 	if err != nil {
