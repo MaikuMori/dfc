@@ -2,10 +2,53 @@ package cli
 
 import (
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/MaikuMori/dfc/internal/project"
 )
+
+func TestTagsRenameCommand(t *testing.T) {
+	setupDFCRoot(t)
+	captureNamed(t, "a", "x")
+	captureNamed(t, "b", "y")
+	_ = (&TagsAddCmd{Project: "a", Tags: []string{"work"}}).Run()
+	_ = (&TagsAddCmd{Project: "b", Tags: []string{"work"}}).Run()
+
+	out, err := captureStdout(t, func() error {
+		return (&TagsRenameCmd{Old: "work", New: "active"}).Run()
+	})
+	if err != nil {
+		t.Fatalf("tags rename: %v", err)
+	}
+	if !strings.Contains(out, "2 project") {
+		t.Errorf("should report 2 projects, got %q", out)
+	}
+
+	reg, err := project.LoadRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(reg.Tags("a"), "active") || slices.Contains(reg.Tags("a"), "work") {
+		t.Errorf("a should carry active not work: %v", reg.Tags("a"))
+	}
+}
+
+func TestTagsRenameNoOpJSON(t *testing.T) {
+	setupDFCRoot(t)
+	captureNamed(t, "a", "x")
+
+	out, err := captureStdout(t, func() error {
+		return (&TagsRenameCmd{JSON: true, Old: "ghost", New: "x"}).Run()
+	})
+	if err != nil {
+		t.Fatalf("tags rename: %v", err)
+	}
+	if !strings.Contains(out, `"renamed":0`) {
+		t.Errorf("no-op json should report renamed:0, got %q", out)
+	}
+}
 
 func TestExpandTagArgs(t *testing.T) {
 	cases := []struct {

@@ -13,11 +13,12 @@ import (
 // TagsCmd groups the project-tag management subcommands. With no
 // subcommand, prints the current project's tags (default shape).
 type TagsCmd struct {
-	Show TagsShowCmd `cmd:"" default:"withargs" help:"Show a project's tags (default: cwd project)."`
-	Add  TagsAddCmd  `cmd:"" help:"Add one or more tags to a project."`
-	Rm   TagsRmCmd   `cmd:"" help:"Remove one or more tags from a project."`
-	Set  TagsSetCmd  `cmd:"" help:"Replace a project's full tag list."`
-	Ls   TagsLsCmd   `cmd:"" aliases:"list" help:"List every distinct tag across the registry."`
+	Show   TagsShowCmd   `cmd:"" default:"withargs" help:"Show a project's tags (default: cwd project)."`
+	Add    TagsAddCmd    `cmd:"" help:"Add one or more tags to a project."`
+	Rm     TagsRmCmd     `cmd:"" help:"Remove one or more tags from a project."`
+	Set    TagsSetCmd    `cmd:"" help:"Replace a project's full tag list."`
+	Rename TagsRenameCmd `cmd:"" help:"Rename a tag across every project that carries it."`
+	Ls     TagsLsCmd     `cmd:"" aliases:"list" help:"List every distinct tag across the registry."`
 }
 
 // TagsShowCmd prints the project's tag list.
@@ -90,6 +91,41 @@ func (c *TagsSetCmd) Run() error {
 		return err
 	}
 	return emitTagsResult(slug, reg.Tags(slug), c.JSON, true)
+}
+
+// TagsRenameCmd renames a tag across every project that carries it. The match
+// on the old name is case-insensitive; the new name is written as given.
+type TagsRenameCmd struct {
+	JSON  bool   `name:"json" help:"Emit {renamed, projects} as a single JSON object."`
+	Merge bool   `name:"merge" help:"Allow folding old into new on a project that already carries new."`
+	Old   string `arg:"" predictor:"tag" help:"Existing tag to rename."`
+	New   string `arg:"" help:"New tag name."`
+}
+
+func (c *TagsRenameCmd) Run() error {
+	reg, err := project.LoadRegistry()
+	if err != nil {
+		return err
+	}
+	slugs, err := reg.RenameTag(c.Old, c.New, c.Merge)
+	if err != nil {
+		return err
+	}
+	if c.JSON {
+		if slugs == nil {
+			slugs = []string{}
+		}
+		return writeJSON(os.Stdout, map[string]any{
+			"renamed":  len(slugs),
+			"projects": slugs,
+		})
+	}
+	if len(slugs) == 0 {
+		fmt.Printf("no project carries tag %q\n", c.Old)
+		return nil
+	}
+	fmt.Printf("renamed %q → %q on %d project%s\n", c.Old, c.New, len(slugs), pluralS(len(slugs)))
+	return nil
 }
 
 // TagsLsCmd lists every distinct tag across every project, with
