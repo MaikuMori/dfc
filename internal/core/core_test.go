@@ -2,6 +2,7 @@ package core
 
 import (
 	"errors"
+	"os"
 	"strings"
 	"testing"
 
@@ -498,6 +499,38 @@ func TestRemoveProjectMovesAllTasks(t *testing.T) {
 	}
 	if hits, _ := cr.Search("untouched", indexAllOpts()); len(hits) != 1 {
 		t.Errorf("expected sibling project to survive, got %d hits", len(hits))
+	}
+}
+
+func TestRemoveTaskRoutesBySlug(t *testing.T) {
+	cr := newTestCore(t)
+	if _, err := cr.Capture(CaptureInput{Slug: "alpha", Description: "keep me"}); err != nil {
+		t.Fatalf("Capture alpha: %v", err)
+	}
+	beta, err := cr.Capture(CaptureInput{Slug: "beta", Description: "delete me"})
+	if err != nil {
+		t.Fatalf("Capture beta: %v", err)
+	}
+
+	if _, err := cr.RemoveTask(beta.Task); err != nil {
+		t.Fatalf("RemoveTask: %v", err)
+	}
+
+	if _, err := os.Stat(beta.Task.Path); !os.IsNotExist(err) {
+		t.Errorf("beta task file still present: stat err = %v", err)
+	}
+	if hits, _ := cr.Search("delete", indexAllOpts()); len(hits) != 0 {
+		t.Errorf("beta task should be gone from the index, got %d hits", len(hits))
+	}
+	if hits, _ := cr.Search("keep", indexAllOpts()); len(hits) != 1 {
+		t.Errorf("alpha task should be untouched, got %d hits", len(hits))
+	}
+}
+
+func TestRemoveTaskEmptyPathErrors(t *testing.T) {
+	cr := newTestCore(t)
+	if _, err := cr.RemoveTask(storage.Task{ID: "x", ProjectSlug: "p"}); err == nil {
+		t.Error("expected an error removing a task with no file path")
 	}
 }
 
