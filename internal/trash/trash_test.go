@@ -10,6 +10,38 @@ import (
 	"github.com/MaikuMori/dfc/internal/storage"
 )
 
+func TestListOrdersSameSecondByID(t *testing.T) {
+	isolate(t)
+	root, err := TrashRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	when := time.Now().UTC().Truncate(time.Second)
+	idLo := "01AAAAAAAAAAAAAAAAAAAAAAAA"
+	idHi := "01BBBBBBBBBBBBBBBBBBBBBBBB"
+	for _, id := range []string{idLo, idHi} {
+		dir := filepath.Join(root, id)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		m := Manifest{ID: id, Kind: KindTask, Slug: "p", TaskID: "x", Filename: "f.md", DeletedAt: when}
+		if err := writeManifest(dir, m); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	out, err := List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out) != 2 {
+		t.Fatalf("List len = %d, want 2", len(out))
+	}
+	if out[0].ID != idHi {
+		t.Errorf("same-second order: out[0].ID = %s, want the newer ULID %s", out[0].ID, idHi)
+	}
+}
+
 // isolate points the storage root at t.TempDir() so trash operations
 // don't touch the real ~/.dfc.
 func isolate(t *testing.T) string {

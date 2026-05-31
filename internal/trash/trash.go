@@ -236,6 +236,11 @@ func List() ([]Entry, error) {
 		out = append(out, Entry{Manifest: m, Dir: entryDir})
 	}
 	sort.Slice(out, func(i, j int) bool {
+		if out[i].DeletedAt.Equal(out[j].DeletedAt) {
+			// ULIDs are monotonic, so the larger id is the later delete —
+			// keeps same-second entries in a stable, newest-first order.
+			return out[i].ID > out[j].ID
+		}
 		return out[i].DeletedAt.After(out[j].DeletedAt)
 	})
 	return out, nil
