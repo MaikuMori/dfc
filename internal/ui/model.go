@@ -325,9 +325,10 @@ func (m Model) countTasksMatchingTagFilter(filter []string) int {
 		return len(all)
 	}
 	reg := m.core.Registry()
+	tf := newTagFilterSet(filter)
 	n := 0
 	for _, t := range all {
-		if tagFilterMatches(reg, t.ProjectSlug, filter) {
+		if tf.matches(reg, t.ProjectSlug) {
 			n++
 		}
 	}

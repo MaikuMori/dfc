@@ -75,9 +75,10 @@ func (m Model) runSearch() Model {
 	}
 	if m.globalView && len(m.tagFilter) > 0 {
 		reg := m.core.Registry()
+		tf := newTagFilterSet(m.tagFilter)
 		slugs := []string{}
 		for _, slug := range reg.Slugs() {
-			if tagFilterMatches(reg, slug, m.tagFilter) {
+			if tf.matches(reg, slug) {
 				slugs = append(slugs, slug)
 			}
 		}
@@ -168,9 +169,10 @@ func (m Model) reloadAll() Model {
 	}
 	if len(m.tagFilter) > 0 {
 		reg := m.core.Registry()
+		tf := newTagFilterSet(m.tagFilter)
 		out := all[:0]
 		for _, t := range all {
-			if tagFilterMatches(reg, t.ProjectSlug, m.tagFilter) {
+			if tf.matches(reg, t.ProjectSlug) {
 				out = append(out, t)
 			}
 		}
@@ -179,34 +181,43 @@ func (m Model) reloadAll() Model {
 	return m.applyTaskListPreservingCursor(all)
 }
 
-// tagFilterMatches mirrors matchesTagFilter from internal/cli but lives
-// here so the ui package doesn't need to import internal/cli (which
-// would be a layer violation). Keeps the OR + (untagged) semantics.
-func tagFilterMatches(reg *project.Registry, slug string, filter []string) bool {
-	if len(filter) == 0 {
-		return true
-	}
-	tags := reg.Tags(slug)
-	hasUntagged := false
-	wantTags := make([]string, 0, len(filter))
+// tagFilterSet is a parsed categorical-tag filter. Building it once and
+// reusing it across every task avoids re-splitting the filter and copying
+// each project's tag list on every comparison.
+type tagFilterSet struct {
+	want     []string
+	untagged bool
+}
+
+func newTagFilterSet(filter []string) tagFilterSet {
+	var tf tagFilterSet
 	for _, f := range filter {
 		if strings.EqualFold(f, "(untagged)") {
-			hasUntagged = true
+			tf.untagged = true
 			continue
 		}
-		wantTags = append(wantTags, f)
+		tf.want = append(tf.want, f)
 	}
-	if hasUntagged && len(tags) == 0 {
+	return tf
+}
+
+// matches reports whether slug survives the filter. The OR + (untagged)
+// semantics mirror the CLI's matchesTagFilter; an empty filter matches all.
+func (tf tagFilterSet) matches(reg *project.Registry, slug string) bool {
+	if len(tf.want) == 0 && !tf.untagged {
 		return true
 	}
-	for _, w := range wantTags {
-		for _, t := range tags {
-			if strings.EqualFold(w, t) {
-				return true
-			}
-		}
+	if tf.untagged && reg.IsUntagged(slug) {
+		return true
 	}
-	return false
+	return reg.HasAnyTag(slug, tf.want)
+}
+
+// tagFilterMatches mirrors matchesTagFilter from internal/cli but lives
+// here so the ui package doesn't need to import internal/cli (which
+// would be a layer violation).
+func tagFilterMatches(reg *project.Registry, slug string, filter []string) bool {
+	return newTagFilterSet(filter).matches(reg, slug)
 }
 
 // applyTaskListPreservingCursor commits a new task list to the model,

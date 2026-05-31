@@ -245,6 +245,30 @@ func (r *Registry) Tags(slug string) []string {
 	return out
 }
 
+// HasAnyTag reports whether slug carries any of want (case-insensitive). It
+// reads the registry's tags in place, so hot per-task filters avoid the
+// defensive copy Tags makes.
+func (r *Registry) HasAnyTag(slug string, want []string) bool {
+	e, ok := r.entries[slug]
+	if !ok {
+		return false
+	}
+	for _, w := range want {
+		for _, t := range e.Tags {
+			if strings.EqualFold(w, t) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// IsUntagged reports whether slug has no categorical tags.
+func (r *Registry) IsUntagged(slug string) bool {
+	e, ok := r.entries[slug]
+	return !ok || len(e.Tags) == 0
+}
+
 // SetTags replaces slug's tag list. Input is de-duplicated case-
 // insensitively (the first occurrence's case is preserved). Empty
 // strings are dropped.
