@@ -91,7 +91,7 @@ func (r *Registry) Save() error {
 		return err
 	}
 	b = append(b, '\n')
-	return os.WriteFile(r.path, b, 0o644)
+	return writeFileAtomic(r.path, b, 0o644)
 }
 
 // Name returns the friendly name for slug, falling back to the slug itself
