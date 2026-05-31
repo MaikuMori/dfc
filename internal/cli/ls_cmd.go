@@ -86,7 +86,7 @@ func (c *LsCmd) Run() error {
 	// project mode the result is either all-or-nothing, but the flag
 	// still composes (e.g. `dfc ls -p acme --tag work` filters acme's
 	// tasks if acme is tagged work, else empty).
-	if tagFilter := expandCommaTagFilter(c.Tag); len(tagFilter) > 0 {
+	if tagFilter := expandTagArgs(c.Tag); len(tagFilter) > 0 {
 		filtered := tasks[:0]
 		for _, t := range tasks {
 			if matchesTagFilter(reg, t.ProjectSlug, tagFilter) {

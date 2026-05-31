@@ -10,7 +10,6 @@ import (
 	"github.com/MaikuMori/dfc/internal/storage"
 )
 
-
 // EditCmd rewrites a task's description and/or details.
 //
 //   - --description "new" replaces the description (and renames the file

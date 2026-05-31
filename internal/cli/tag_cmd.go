@@ -225,12 +225,6 @@ func matchesTagFilter(reg *project.Registry, slug string, filter []string) bool 
 	return false
 }
 
-// expandCommaTagFilter takes the raw repeatable+CSV --tag input and
-// flattens it: ["work,oss", "personal"] → ["work", "oss", "personal"].
-func expandCommaTagFilter(in []string) []string {
-	return expandTagArgs(in)
-}
-
 // projectSlugsMatchingTags returns the set of slugs whose tag list
 // satisfies filter. Sorted alphabetically.
 func projectSlugsMatchingTags(reg *project.Registry, filter []string) []string {

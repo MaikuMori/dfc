@@ -26,7 +26,7 @@ func (c *ProjectsCmd) Run() error {
 	reg := cr.Registry()
 	counts := cr.CountsByProject()
 
-	tagFilter := expandCommaTagFilter(c.Tag)
+	tagFilter := expandTagArgs(c.Tag)
 	slugs := projectSlugsMatchingTags(reg, tagFilter)
 	// Sort by LastUsed desc, slug asc.
 	sortSlugsByRecency(reg, slugs)

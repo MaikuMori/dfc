@@ -122,7 +122,7 @@ func (c *SearchCmd) Run() error {
 	}
 
 	var projectSet []string
-	if tagFilter := expandCommaTagFilter(c.Tag); len(tagFilter) > 0 {
+	if tagFilter := expandTagArgs(c.Tag); len(tagFilter) > 0 {
 		projectSet = projectSlugsMatchingTags(cr.Registry(), tagFilter)
 	}
 
