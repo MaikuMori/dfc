@@ -64,10 +64,8 @@ func (m Model) updateSwitch(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.picker.Init()
 	}
 	if !m.picker.Canceled() && m.picker.Selected() != "" {
-		if extra, err := m.switchTo(m.picker.Selected()); err != nil {
+		if err := m.switchTo(m.picker.Selected()); err != nil {
 			m.err = err
-		} else if extra != nil {
-			cmd = tea.Batch(cmd, extra)
 		}
 	}
 	m.picker = Picker{}
@@ -207,33 +205,26 @@ func tagPickerItems(reg *project.Registry, includeUntagged bool) []PickerItem {
 	return items
 }
 
-// switchTo points the model at a different project. Returns a Cmd that
-// (re)subscribes to the watcher when watch recovery happens — caller must
-// batch it with any other Cmd it has in flight.
-func (m *Model) switchTo(slug string) (tea.Cmd, error) {
+// switchTo points the model at a different project and repoints the
+// watcher at the new project's directory.
+func (m *Model) switchTo(slug string) error {
 	store, err := m.core.StoreFor(slug)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	tasks, err := store.List()
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if err := m.core.Registry().Touch(slug); err != nil {
-		return nil, err
+		return err
 	}
-	var cmd tea.Cmd
 	if m.watcher != nil {
 		// Removing a missing path errors quietly; only the Add must succeed.
 		_ = m.watcher.Remove(m.store.Dir())
 		if err := m.watcher.Add(store.Dir()); err != nil {
-			return nil, err
+			return err
 		}
-		if !m.watchLive {
-			// Recovered from a previous fsErrorMsg — re-arm the subscription.
-			cmd = waitForChange(m.watchSub)
-		}
-		m.watchLive = true
 	}
 	m.slug = slug
 	m.store = store
@@ -244,7 +235,7 @@ func (m *Model) switchTo(slug string) (tea.Cmd, error) {
 	}
 	m.expandedID = ""
 	m.err = nil
-	return cmd, nil
+	return nil
 }
 
 func (m Model) updateList(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -479,14 +470,10 @@ func (m Model) updateList(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.globalView = !m.globalView
 		m.expandedID = ""
 		m.expandedSlug = ""
-		cmd, err := m.refreshWatches()
-		if err != nil {
+		if err := m.refreshWatches(); err != nil {
 			m.err = err
 		}
 		m = m.reloadActive()
-		if cmd != nil {
-			return m, cmd
-		}
 		return m, nil
 
 	case key.Matches(msg, keys.Help):

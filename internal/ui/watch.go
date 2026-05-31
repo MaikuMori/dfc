@@ -14,7 +14,8 @@ type fsChangedMsg struct{}
 
 // fsErrorMsg surfaces a watcher error. We deliberately do not reissue
 // the listener after an fsErrorMsg — a closed channel would otherwise
-// flood the message loop. Recovery happens via project switch or relaunch.
+// flood the message loop. The watcher only dies at teardown, so no
+// recovery is attempted: relaunch dfc to get a live watch again.
 type fsErrorMsg struct{ err error }
 
 // waitForChange returns a tea.Cmd that pulls one Event off the watch

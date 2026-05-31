@@ -2,16 +2,14 @@ package ui
 
 import (
 	"github.com/MaikuMori/dfc/internal/storage"
-	tea "charm.land/bubbletea/v2"
 )
 
 // refreshWatches computes the desired watch set (registry file + current
 // project dir + all other project dirs in global view), then applies the
-// diff against the watcher's current set. Returns a re-armed waitForChange
-// Cmd only on a dead → live transition.
-func (m *Model) refreshWatches() (tea.Cmd, error) {
+// diff against the watcher's current set.
+func (m *Model) refreshWatches() error {
 	if m.watcher == nil {
-		return nil, nil
+		return nil
 	}
 	desired := map[string]bool{}
 	if regPath := storage.RegistryPath(); regPath != "" {
@@ -53,15 +51,7 @@ func (m *Model) refreshWatches() (tea.Cmd, error) {
 			firstErr = err
 		}
 	}
-	wasLive := m.watchLive
-	m.watchLive = true
-	if firstErr != nil {
-		return nil, firstErr
-	}
-	if !wasLive {
-		return waitForChange(m.watchSub), nil
-	}
-	return nil, nil
+	return firstErr
 }
 
 // setViewportBody updates the viewport's content only when it actually

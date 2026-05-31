@@ -53,7 +53,6 @@ type Model struct {
 	expandedSlug string // project slug of the expanded task (collision-safe in global)
 	watcher      *watch.Watcher
 	watchSub     <-chan watch.Event
-	watchLive    bool // false after an fsErrorMsg so we stop reissuing the cmd
 
 	globalView    bool
 	capTargetSlug string // set transiently when capturing into a picker-chosen project; "" = current store
@@ -96,9 +95,8 @@ func New(cr *core.Core, slug string, store *storage.Store, initial []storage.Tas
 		input:     ti,
 		capArea:   newCaptureArea("task description"),
 		viewport:  viewport.New(),
-		watcher:   watcher,
-		watchSub:  subscribeIfLive(watcher),
-		watchLive: watcher != nil,
+		watcher:  watcher,
+		watchSub: subscribeIfLive(watcher),
 	}
 }
 
@@ -112,10 +110,7 @@ func subscribeIfLive(w *watch.Watcher) <-chan watch.Event {
 }
 
 func (m Model) Init() tea.Cmd {
-	if m.watchLive {
-		return waitForChange(m.watchSub)
-	}
-	return nil
+	return waitForChange(m.watchSub)
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -138,7 +133,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// If a project appeared/disappeared since the last event and we're
 		// in global view, extend / contract the watch set.
 		if m.globalView && !equalStringSets(prevSlugs, slugSetSnapshot(m.core.Registry())) {
-			if _, err := m.refreshWatches(); err != nil {
+			if err := m.refreshWatches(); err != nil {
 				m.err = err
 			}
 		}
@@ -156,7 +151,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case fsErrorMsg:
 		m.err = msg.err
-		m.watchLive = false
 		return m, nil
 
 	case tea.PasteMsg, tea.PasteStartMsg, tea.PasteEndMsg:
