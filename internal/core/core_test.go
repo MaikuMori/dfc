@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/MaikuMori/dfc/internal/project"
 	"github.com/MaikuMori/dfc/internal/storage"
 )
 
@@ -540,6 +541,36 @@ func TestRemoveTaskEmptyPathErrors(t *testing.T) {
 	cr := newTestCore(t)
 	if _, err := cr.RemoveTask(storage.Task{ID: "x", ProjectSlug: "p"}); err == nil {
 		t.Error("expected an error removing a task with no file path")
+	}
+}
+
+func TestReloadRegistryPicksUpExternalChange(t *testing.T) {
+	cr := newTestCore(t)
+	if err := cr.EnsureProject("alpha", "Alpha"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Another process registers a project and persists it.
+	other, err := project.LoadRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	other.Register("beta", "Beta")
+	if err := other.Save(); err != nil {
+		t.Fatal(err)
+	}
+
+	if cr.Registry().Has("beta") {
+		t.Fatal("precondition: beta should be unknown before reload")
+	}
+	if err := cr.ReloadRegistry(); err != nil {
+		t.Fatalf("ReloadRegistry: %v", err)
+	}
+	if !cr.Registry().Has("beta") {
+		t.Errorf("ReloadRegistry should surface the externally-registered project")
+	}
+	if got := cr.Registry().Name("beta"); got != "Beta" {
+		t.Errorf("name = %q, want Beta", got)
 	}
 }
 
