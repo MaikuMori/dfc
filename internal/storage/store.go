@@ -208,11 +208,15 @@ func (s *Store) FindByID(id string) (string, error) {
 		return "", err
 	}
 	for _, p := range candidates {
-		t, err := s.Load(p)
+		b, err := os.ReadFile(p)
 		if err != nil {
 			continue
 		}
-		if strings.EqualFold(t.ID, id) {
+		fid, err := frontmatterID(b)
+		if err != nil {
+			continue
+		}
+		if strings.EqualFold(fid, id) {
 			return p, nil
 		}
 	}

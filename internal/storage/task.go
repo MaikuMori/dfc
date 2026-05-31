@@ -90,21 +90,10 @@ func Marshal(t Task) ([]byte, error) {
 // Unmarshal parses a markdown file with YAML frontmatter into a Task.
 func Unmarshal(b []byte) (Task, error) {
 	var t Task
-	s := string(b)
-	if !strings.HasPrefix(s, frontmatterSep) {
-		return t, errors.New("task file is missing frontmatter")
+	fm, body, err := splitFrontmatter(b)
+	if err != nil {
+		return t, err
 	}
-	rest := s[len(frontmatterSep):]
-	rest = strings.TrimLeft(rest, "\r\n")
-
-	end := strings.Index(rest, "\n"+frontmatterSep)
-	if end < 0 {
-		return t, errors.New("task file has unterminated frontmatter")
-	}
-	fm := rest[:end]
-	body := rest[end+len("\n"+frontmatterSep):]
-	body = strings.TrimLeft(body, "\r\n")
-
 	var meta struct {
 		ID      string    `yaml:"id"`
 		Status  Status    `yaml:"status"`
@@ -119,6 +108,39 @@ func Unmarshal(b []byte) (Task, error) {
 
 	t.Description, t.Details = splitBody(body)
 	return t, nil
+}
+
+// splitFrontmatter separates the YAML frontmatter block from the markdown
+// body. It errors when the leading or closing `---` fence is missing.
+func splitFrontmatter(b []byte) (frontmatter, body string, err error) {
+	s := string(b)
+	if !strings.HasPrefix(s, frontmatterSep) {
+		return "", "", errors.New("task file is missing frontmatter")
+	}
+	rest := strings.TrimLeft(s[len(frontmatterSep):], "\r\n")
+	end := strings.Index(rest, "\n"+frontmatterSep)
+	if end < 0 {
+		return "", "", errors.New("task file has unterminated frontmatter")
+	}
+	body = strings.TrimLeft(rest[end+len("\n"+frontmatterSep):], "\r\n")
+	return rest[:end], body, nil
+}
+
+// frontmatterID parses only the id from a task file's frontmatter, skipping
+// the goldmark body parse. FindByID uses it to confirm a candidate without
+// paying for a full Unmarshal.
+func frontmatterID(b []byte) (string, error) {
+	fm, _, err := splitFrontmatter(b)
+	if err != nil {
+		return "", err
+	}
+	var meta struct {
+		ID string `yaml:"id"`
+	}
+	if err := yaml.Unmarshal([]byte(fm), &meta); err != nil {
+		return "", fmt.Errorf("could not parse task frontmatter: %w", err)
+	}
+	return meta.ID, nil
 }
 
 // splitBody extracts the description and details from the markdown body via
