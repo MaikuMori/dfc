@@ -1,0 +1,6 @@
+# Revisions to skip in `git blame`. Configure once with:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+# GitHub honors this file automatically.
+
+# Bulk reformat with goimports (-local internal grouping). Cosmetic only.
+2d77c4566dc5baf5e3635f45a2c84c453103111b

@@ -43,6 +43,21 @@ vet:
 lint:
     golangci-lint run ./...
 
+# Format code: goimports with local import grouping (internal imports last).
+fmt:
+    go tool goimports -w -local github.com/MaikuMori/dfc .
+
+# Verify formatting without writing; fails if anything would change.
+fmt-check:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    out=$(go tool goimports -l -local github.com/MaikuMori/dfc .)
+    if [ -n "$out" ]; then
+        echo "unformatted files (run \`just fmt\`):"
+        echo "$out"
+        exit 1
+    fi
+
 # Scan dependencies and module code for known vulnerabilities.
 # Auto-installs govulncheck on first run.
 vuln:
@@ -62,8 +77,8 @@ licenses:
     @command -v go-licenses >/dev/null 2>&1 || go install github.com/google/go-licenses@latest
     go-licenses check --ignore=modernc.org/mathutil ./...
 
-# vet + lint + tests + vuln in one shot.
-check: vet lint test vuln
+# fmt-check + vet + lint + tests + vuln in one shot.
+check: fmt-check vet lint test vuln
 
 # Remove local build, coverage, and snapshot artifacts (leaves committed docs/assets and the installed binary alone).
 clean:
