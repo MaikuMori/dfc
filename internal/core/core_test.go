@@ -3,6 +3,7 @@ package core
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -10,6 +11,44 @@ import (
 	"github.com/MaikuMori/dfc/internal/project"
 	"github.com/MaikuMori/dfc/internal/storage"
 )
+
+func TestMergeProjectKeepsForeignContent(t *testing.T) {
+	cr := newTestCore(t)
+	if _, err := cr.Capture(CaptureInput{Slug: "src", Description: "a"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cr.Capture(CaptureInput{Slug: "dst", Description: "b"}); err != nil {
+		t.Fatal(err)
+	}
+	srcDir, err := storage.ProjectDirPath("src")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(srcDir, "notes.txt"), []byte("keep me"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	moved, err := cr.MergeProject("src", "dst")
+	if err != nil {
+		t.Fatalf("MergeProject: %v", err)
+	}
+	if moved != 1 {
+		t.Errorf("moved = %d, want 1", moved)
+	}
+	if dst, _ := cr.List("dst"); len(dst) != 2 {
+		t.Errorf("dst should hold 2 tasks, got %d", len(dst))
+	}
+	// The source dir (with its foreign file) and registration are kept.
+	if !storage.ProjectDirExists("src") {
+		t.Errorf("src dir should be kept when it holds foreign content")
+	}
+	if _, err := os.Stat(filepath.Join(srcDir, "notes.txt")); err != nil {
+		t.Errorf("foreign file must survive the merge: %v", err)
+	}
+	if !cr.Registry().Has("src") {
+		t.Errorf("src should stay registered when it isn't removed")
+	}
+}
 
 // newTestCore opens a fresh Core under t.TempDir(). Warn callbacks
 // land on stderr (default) since no current test asserts against them.

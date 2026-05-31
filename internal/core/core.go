@@ -571,8 +571,9 @@ func (c *Core) MoveTask(t storage.Task, destSlug string) (storage.Task, error) {
 }
 
 // MergeProject folds every task in srcSlug into dstSlug, then removes the
-// (now-empty) source directory and deregisters it. Unlike RemoveProject the
-// source is NOT trashed — its files have been relocated, not deleted. The
+// source directory and deregisters it — unless the directory still holds
+// content dfc didn't create, in which case it is left intact. Unlike
+// RemoveProject the source is NOT trashed — its files were relocated. The
 // destination is auto-created when unknown. Returns the number of tasks moved.
 // On a mid-merge failure it returns early before any cleanup, leaving the
 // source's remaining files intact so a re-run is idempotent.
@@ -605,13 +606,25 @@ func (c *Core) MergeProject(srcSlug, dstSlug string) (moved int, err error) {
 		moved++
 	}
 
-	// The source dir is now empty. Remove it without trashing (the files were
-	// relocated, not deleted), evict the cached store so a later StoreFor
-	// can't resurrect the directory, then deregister.
-	if dir, derr := storage.ProjectDirPath(srcSlug); derr == nil {
-		if rerr := os.RemoveAll(dir); rerr != nil {
-			return moved, rerr
-		}
+	// The task files are relocated; remove the source dir without trashing
+	// (they were moved, not deleted), evict the cached store so a later
+	// StoreFor can't resurrect the directory, then deregister. But never
+	// recursively delete content dfc didn't create — a synced .git, a notes
+	// file, editor swaps. When such content remains, the source is left
+	// registered and intact and a non-fatal warning is surfaced.
+	dir, derr := storage.ProjectDirPath(srcSlug)
+	if derr != nil {
+		return moved, nil
+	}
+	switch foreign, ferr := dirHasForeignContent(dir); {
+	case ferr != nil:
+		return moved, ferr
+	case foreign:
+		c.warn("merge", fmt.Errorf("kept %s — it still holds files dfc didn't create", dir))
+		return moved, nil
+	}
+	if err := os.RemoveAll(dir); err != nil {
+		return moved, err
 	}
 	c.mu.Lock()
 	delete(c.stores, srcSlug)
@@ -620,6 +633,29 @@ func (c *Core) MergeProject(srcSlug, dstSlug string) (moved int, err error) {
 		return moved, err
 	}
 	return moved, nil
+}
+
+// dirHasForeignContent reports whether dir holds anything dfc didn't create —
+// any entry that isn't inert OS metadata. The relocated task files are gone by
+// the time this runs, so a "true" means real user content the merge must not
+// recursively delete.
+func dirHasForeignContent(dir string) (bool, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	for _, e := range entries {
+		switch e.Name() {
+		case ".DS_Store", "Thumbs.db", ".gitkeep":
+			continue
+		default:
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // Show returns a task by full ULID, scanning every project.
