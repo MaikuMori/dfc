@@ -502,6 +502,15 @@ func TestRemoveProjectMovesAllTasks(t *testing.T) {
 	}
 }
 
+func TestCaptureRejectsBlankDescription(t *testing.T) {
+	cr := newTestCore(t)
+	for _, desc := range []string{"", "   ", "\t\n"} {
+		if _, err := cr.Capture(CaptureInput{Slug: "p", Description: desc}); err == nil {
+			t.Errorf("Capture(%q) should error on a blank description", desc)
+		}
+	}
+}
+
 func TestRemoveTaskRoutesBySlug(t *testing.T) {
 	cr := newTestCore(t)
 	if _, err := cr.Capture(CaptureInput{Slug: "alpha", Description: "keep me"}); err != nil {

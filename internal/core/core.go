@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/MaikuMori/dfc/internal/capture"
@@ -169,6 +170,9 @@ type CaptureResult struct {
 func (c *Core) Capture(in CaptureInput) (CaptureResult, error) {
 	if in.Slug == "" {
 		return CaptureResult{}, errors.New("missing project slug")
+	}
+	if strings.TrimSpace(in.Description) == "" {
+		return CaptureResult{}, errors.New("missing task description")
 	}
 	isNew := !storage.ProjectDirExists(in.Slug)
 	if err := c.EnsureProject(in.Slug, in.DisplayName); err != nil {
