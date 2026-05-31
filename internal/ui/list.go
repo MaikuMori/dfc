@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/MaikuMori/dfc/internal/storage"
+	"github.com/mattn/go-runewidth"
 	"github.com/muesli/reflow/wordwrap"
 )
 
@@ -79,8 +80,8 @@ func projectPrefix(m Model, t storage.Task) string {
 	if m.core != nil {
 		name = m.core.Registry().Prefix(t.ProjectSlug)
 	}
-	if len(name) > prefixMaxLen-2 {
-		name = name[:prefixMaxLen-3] + "…"
+	if runewidth.StringWidth(name) > prefixMaxLen-2 {
+		name = runewidth.Truncate(name, prefixMaxLen-2, "…")
 	}
 	return "[" + name + "] "
 }
@@ -97,8 +98,9 @@ func renderRow(t storage.Task, prefix string, cursor bool, width int, flatDone b
 	}
 
 	const iconWidth = 2 // "○ " or "✓ "
-	indent := strings.Repeat(" ", iconWidth+len(prefix))
-	wrapWidth := width - iconWidth - len(prefix)
+	prefixWidth := runewidth.StringWidth(prefix)
+	indent := strings.Repeat(" ", iconWidth+prefixWidth)
+	wrapWidth := width - iconWidth - prefixWidth
 	if wrapWidth < 1 {
 		wrapWidth = 1
 	}
@@ -174,8 +176,9 @@ func renderRow(t storage.Task, prefix string, cursor bool, width int, flatDone b
 // so the row's ownership stays visible while expanded.
 func renderTaskMarkdown(t storage.Task, prefix string, width int) string {
 	const iconWidth = 2 // "○ " or "✓ "
+	prefixWidth := runewidth.StringWidth(prefix)
 
-	mdWidth := width - iconWidth - len(prefix)
+	mdWidth := width - iconWidth - prefixWidth
 	// Below the markdown renderer's minimum useful width the expanded
 	// view would overflow the terminal; fall back to the collapsed row
 	// so a tiny screen stays legible.
@@ -191,7 +194,7 @@ func renderTaskMarkdown(t storage.Task, prefix string, width int) string {
 	if t.Status == storage.StatusDone {
 		icon = iconDone
 	}
-	indent := strings.Repeat(" ", iconWidth+len(prefix))
+	indent := strings.Repeat(" ", iconWidth+prefixWidth)
 	lines := strings.Split(rendered, "\n")
 	firstSet := false
 	for i, line := range lines {

@@ -4,11 +4,13 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/MaikuMori/dfc/internal/core"
 	"github.com/MaikuMori/dfc/internal/storage"
+	"github.com/mattn/go-runewidth"
 )
 
 // newTagModel boots a Model under a fresh DFC_ROOT, seeds three
@@ -68,6 +70,20 @@ func TestRunSearchFallbackUsesSnapshot(t *testing.T) {
 	got := m.runSearchFallback()
 	if len(got.tasks) != 1 || got.tasks[0].ID != "1" {
 		t.Errorf("fallback should filter the snapshot to 1 task, got %d", len(got.tasks))
+	}
+}
+
+func TestProjectPrefixTruncatesByWidth(t *testing.T) {
+	m := newTagModel(t)
+	if err := m.core.Registry().SetPrefix("acme", "🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀"); err != nil {
+		t.Fatal(err)
+	}
+	p := projectPrefix(m, storage.Task{ProjectSlug: "acme"})
+	if !utf8.ValidString(p) {
+		t.Errorf("prefix is not valid UTF-8 (mid-rune cut): %q", p)
+	}
+	if w := runewidth.StringWidth(p); w > prefixMaxLen+1 {
+		t.Errorf("prefix display width %d exceeds the %d cap: %q", w, prefixMaxLen+1, p)
 	}
 }
 
