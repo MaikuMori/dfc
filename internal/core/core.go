@@ -535,6 +535,39 @@ func (c *Core) RenameTask(t *storage.Task, newDesc string) error {
 	return nil
 }
 
+// MoveTask relocates an existing task into destSlug, auto-registering that
+// project when unknown, and mirrors the move to the index. A move into the
+// task's current project is a no-op. Returns the task with its new
+// ProjectSlug / Path / Modified — the ULID is unchanged, so a single index
+// upsert updates the row's project and path in place.
+func (c *Core) MoveTask(t storage.Task, destSlug string) (storage.Task, error) {
+	if t.Path == "" {
+		return t, errors.New("task has no file path")
+	}
+	if destSlug == "" {
+		return t, errors.New("missing project slug")
+	}
+	if destSlug == t.ProjectSlug {
+		return t, nil // already there
+	}
+	if err := c.EnsureProject(destSlug, ""); err != nil {
+		return t, err
+	}
+	destStore, err := c.StoreFor(destSlug)
+	if err != nil {
+		return t, err
+	}
+	moved, err := destStore.MoveIn(t)
+	if err != nil {
+		return t, err
+	}
+	c.upsertIndex(moved)
+	if err := c.reg.Touch(destSlug); err != nil {
+		return moved, err
+	}
+	return moved, nil
+}
+
 // Show returns a task by full ULID, scanning every project.
 func (c *Core) Show(id string) (storage.Task, error) {
 	return c.show(id, "")

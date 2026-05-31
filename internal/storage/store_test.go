@@ -123,6 +123,91 @@ func TestFindByIDIsCaseInsensitive(t *testing.T) {
 	}
 }
 
+func TestMoveInRelocatesFileAndRetagsSlug(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(EnvRoot, root)
+	a, err := Open("alpha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := Open("beta")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now().UTC().Truncate(time.Second)
+	id := "0123456789ABCDEFGHJKMNPQRS"
+	task, err := a.Create(Task{ID: id, Status: StatusOpen, Created: now, Description: "move me"}, FilenameSlug(id[:10], "move me"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldPath := task.Path
+
+	moved, err := b.MoveIn(task)
+	if err != nil {
+		t.Fatalf("MoveIn: %v", err)
+	}
+	if moved.ProjectSlug != "beta" {
+		t.Errorf("ProjectSlug = %q, want beta", moved.ProjectSlug)
+	}
+	if filepath.Dir(moved.Path) != b.Dir() {
+		t.Errorf("moved path %q not under beta dir %q", moved.Path, b.Dir())
+	}
+	if moved.ID != id {
+		t.Errorf("ULID changed to %q", moved.ID)
+	}
+	if _, err := os.Stat(oldPath); !os.IsNotExist(err) {
+		t.Errorf("old file should be gone, stat err = %v", err)
+	}
+	if p, _ := b.FindByID(id); p == "" {
+		t.Errorf("beta.FindByID should locate the moved task")
+	}
+	if p, _ := a.FindByID(id); p != "" {
+		t.Errorf("alpha.FindByID should no longer find it, got %q", p)
+	}
+}
+
+func TestMoveInDisambiguatesDestCollision(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(EnvRoot, root)
+	a, _ := Open("alpha")
+	b, _ := Open("beta")
+	now := time.Now().UTC().Truncate(time.Second)
+
+	const slug = "0123456789-dup"
+	if _, err := b.Create(Task{ID: "0123456789ZZZZZZZZZZZZZZZZ", Status: StatusOpen, Created: now, Description: "dup"}, slug); err != nil {
+		t.Fatal(err)
+	}
+	moveID := "0123456789AAAAAAAAAAAAAAAA"
+	src, err := a.Create(Task{ID: moveID, Status: StatusOpen, Created: now, Description: "dup"}, slug)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	moved, err := b.MoveIn(src)
+	if err != nil {
+		t.Fatalf("MoveIn: %v", err)
+	}
+	if filepath.Base(moved.Path) == "0123456789-dup.md" {
+		t.Errorf("moved file should be disambiguated, got %s", filepath.Base(moved.Path))
+	}
+	if list, _ := b.List(); len(list) != 2 {
+		t.Fatalf("beta should hold both files, got %d", len(list))
+	}
+	if p, _ := b.FindByID(moveID); p == "" {
+		t.Errorf("moved ULID should resolve in beta")
+	}
+}
+
+func TestMoveInMissingPath(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(EnvRoot, root)
+	b, _ := Open("beta")
+	if _, err := b.MoveIn(Task{ID: "x"}); err == nil {
+		t.Error("MoveIn with no file path should error")
+	}
+}
+
 func TestStoreCRUD(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv(EnvRoot, root)

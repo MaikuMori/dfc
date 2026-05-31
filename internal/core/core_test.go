@@ -513,6 +513,84 @@ func TestCaptureRejectsBlankDescription(t *testing.T) {
 	}
 }
 
+func TestMoveTaskMovesFileAndIndexFollows(t *testing.T) {
+	cr := newTestCore(t)
+	res, err := cr.Capture(CaptureInput{Slug: "alpha", Description: "relocate me"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cr.Capture(CaptureInput{Slug: "beta", Description: "keep"}); err != nil {
+		t.Fatal(err)
+	}
+
+	moved, err := cr.MoveTask(res.Task, "beta")
+	if err != nil {
+		t.Fatalf("MoveTask: %v", err)
+	}
+	if moved.ProjectSlug != "beta" {
+		t.Errorf("moved slug = %q, want beta", moved.ProjectSlug)
+	}
+	if _, err := os.Stat(res.Task.Path); !os.IsNotExist(err) {
+		t.Errorf("old file should be gone")
+	}
+	if hits, _ := cr.Search("relocate", indexAllOpts()); len(hits) != 1 || hits[0].Task.ProjectSlug != "beta" {
+		t.Errorf("search should find the task under beta, got %+v", hits)
+	}
+	counts := cr.CountsByProject()
+	if counts["alpha"].Open != 0 {
+		t.Errorf("alpha open count = %d, want 0", counts["alpha"].Open)
+	}
+	if counts["beta"].Open != 2 {
+		t.Errorf("beta open count = %d, want 2", counts["beta"].Open)
+	}
+}
+
+func TestMoveTaskAutoRegistersUnknownDest(t *testing.T) {
+	cr := newTestCore(t)
+	res, _ := cr.Capture(CaptureInput{Slug: "alpha", Description: "x"})
+	if cr.Registry().Has("fresh") {
+		t.Fatal("precondition: fresh should not exist yet")
+	}
+	moved, err := cr.MoveTask(res.Task, "fresh")
+	if err != nil {
+		t.Fatalf("MoveTask: %v", err)
+	}
+	if !cr.Registry().Has("fresh") {
+		t.Errorf("destination project should be auto-registered")
+	}
+	if moved.ProjectSlug != "fresh" {
+		t.Errorf("moved slug = %q, want fresh", moved.ProjectSlug)
+	}
+}
+
+func TestMoveTaskSameProjectNoOp(t *testing.T) {
+	cr := newTestCore(t)
+	res, _ := cr.Capture(CaptureInput{Slug: "alpha", Description: "stay"})
+	before := res.Task
+
+	moved, err := cr.MoveTask(before, "alpha")
+	if err != nil {
+		t.Fatalf("MoveTask: %v", err)
+	}
+	if moved.Path != before.Path {
+		t.Errorf("no-op move changed path: %q -> %q", before.Path, moved.Path)
+	}
+	if _, err := os.Stat(before.Path); err != nil {
+		t.Errorf("file should be untouched: %v", err)
+	}
+}
+
+func TestMoveTaskGuards(t *testing.T) {
+	cr := newTestCore(t)
+	res, _ := cr.Capture(CaptureInput{Slug: "alpha", Description: "x"})
+	if _, err := cr.MoveTask(res.Task, ""); err == nil {
+		t.Error("empty destSlug should error")
+	}
+	if _, err := cr.MoveTask(storage.Task{ProjectSlug: "alpha"}, "beta"); err == nil {
+		t.Error("missing path should error")
+	}
+}
+
 func TestRemoveTaskRoutesBySlug(t *testing.T) {
 	cr := newTestCore(t)
 	if _, err := cr.Capture(CaptureInput{Slug: "alpha", Description: "keep me"}); err != nil {

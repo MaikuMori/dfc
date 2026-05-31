@@ -251,3 +251,46 @@ func (s *Store) RenameForDescription(t *Task, newDesc string) error {
 	}
 	return s.Save(t)
 }
+
+// MoveIn relocates the file backing t into this store's directory, returning
+// the task re-stamped as owned by this store (new Path, ProjectSlug, Modified;
+// the ULID is unchanged). The timestamp prefix and description slug are kept; a
+// destination filename collision is disambiguated with the same ULID-suffix
+// candidates Create uses. The file is moved, never copied — a cross-filesystem
+// destination surfaces the rename error rather than a silent copy.
+func (s *Store) MoveIn(t Task) (Task, error) {
+	if t.Path == "" {
+		return t, errors.New("task has no file path")
+	}
+	stem := filepath.Base(t.Path)
+	stem = stem[:len(stem)-len(filepath.Ext(stem))]
+	ts := FilenameTimestamp(stem)
+	if ts == "" {
+		return t, fmt.Errorf("cannot parse timestamp from filename %q", t.Path)
+	}
+	base := FilenameSlug(ts, t.Description)
+
+	var newPath string
+	for _, cand := range candidateSlugs(base, t.ID) {
+		dest := s.pathFor(cand)
+		err := renameNoReplace(t.Path, dest)
+		if errors.Is(err, fs.ErrExist) {
+			continue
+		}
+		if err != nil {
+			return t, fmt.Errorf("could not move %s to %s: %w", t.Path, dest, err)
+		}
+		newPath = dest
+		break
+	}
+	if newPath == "" {
+		return t, fmt.Errorf("could not find a free filename for %s", base)
+	}
+
+	t.Path = newPath
+	if err := stampMtime(&t); err != nil {
+		return t, err
+	}
+	s.tagOwn(&t)
+	return t, nil
+}
