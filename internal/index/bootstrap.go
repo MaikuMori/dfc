@@ -147,6 +147,94 @@ func (i *Index) EnsureFresh() error {
 	if err != nil {
 		return err
 	}
-	return i.SyncStaleSince(maxMod)
+	if err := i.SyncStaleSince(maxMod); err != nil {
+		return err
+	}
+	return i.pruneOrphans()
+}
+
+// pruneOrphans drops index rows for tasks whose files have been deleted out
+// from under us. SyncStaleSince only re-indexes newer files, so an external
+// `rm` (or a failed best-effort delete) leaves a stale row pointing at a
+// vanished path. Renames don't orphan — the row is keyed by ULID, so the
+// newer file upserts onto the same row. Detection is by count: when a
+// project's on-disk .md files and its index rows disagree, that project is
+// rebuilt from disk.
+func (i *Index) pruneOrphans() error {
+	counts, err := i.CountsByProject()
+	if err != nil {
+		return err
+	}
+	if len(counts) == 0 {
+		return nil
+	}
+	root, err := storage.Root()
+	if err != nil {
+		return err
+	}
+	projectsDir := filepath.Join(root, "projects")
+	for slug, c := range counts {
+		if countMarkdown(filepath.Join(projectsDir, slug)) != c.Open+c.Done {
+			if err := i.reindexProject(slug); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// reindexProject replaces every index row for one project with the tasks
+// currently on disk, in a single transaction. A project whose directory is
+// gone is simply cleared.
+func (i *Index) reindexProject(slug string) error {
+	var tasks []storage.Task
+	if storage.ProjectDirExists(slug) {
+		s, err := storage.Open(slug)
+		if err != nil {
+			return err
+		}
+		tasks, err = s.List()
+		if err != nil {
+			return err
+		}
+	}
+	tx, err := i.db.Begin()
+	if err != nil {
+		return fmt.Errorf("could not begin project reindex: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.Exec(`DELETE FROM tasks_meta WHERE project = ?`, slug); err != nil {
+		return fmt.Errorf("could not clear project %s from index: %w", slug, err)
+	}
+	upsert, err := tx.Prepare(upsertSQL)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = upsert.Close() }()
+	for _, t := range tasks {
+		if _, err := upsert.Exec(
+			t.ID, t.ProjectSlug, t.Path, string(t.Status),
+			t.Description, t.Details, t.Created.Unix(), t.Modified.Unix(),
+		); err != nil {
+			return fmt.Errorf("could not reindex task %s: %w", t.ID, err)
+		}
+	}
+	return tx.Commit()
+}
+
+// countMarkdown returns the number of .md files directly in dir, or 0 when
+// the directory is missing.
+func countMarkdown(dir string) int {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return 0
+	}
+	n := 0
+	for _, e := range entries {
+		if !e.IsDir() && filepath.Ext(e.Name()) == ".md" {
+			n++
+		}
+	}
+	return n
 }
 

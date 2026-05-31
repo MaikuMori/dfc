@@ -115,6 +115,45 @@ func TestEnsureFreshBootstrapsEmptyIndex(t *testing.T) {
 	}
 }
 
+func TestEnsureFreshPrunesDeletedTask(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(storage.EnvRoot, root)
+
+	keep := writeTask(t, "p", "keep me")
+	gone := writeTask(t, "p", "delete me")
+
+	idx, err := Open(filepath.Join(root, "index.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = idx.Close() })
+
+	if err := idx.Bootstrap(); err != nil {
+		t.Fatal(err)
+	}
+	if n, _ := idx.Count(); n != 2 {
+		t.Fatalf("precondition: Count = %d, want 2", n)
+	}
+
+	// Delete one task file behind the index's back.
+	if err := os.Remove(gone.Path); err != nil {
+		t.Fatal(err)
+	}
+	if err := idx.EnsureFresh(); err != nil {
+		t.Fatalf("EnsureFresh: %v", err)
+	}
+
+	if n, _ := idx.Count(); n != 1 {
+		t.Errorf("orphan not pruned: Count = %d, want 1", n)
+	}
+	if hits, _ := idx.Search("delete", SearchOpts{}); len(hits) != 0 {
+		t.Errorf("deleted task still searchable: %+v", hits)
+	}
+	if hits, _ := idx.Search("keep", SearchOpts{}); len(hits) != 1 || hits[0].Task.ID != keep.ID {
+		t.Errorf("surviving task missing after prune: %+v", hits)
+	}
+}
+
 func TestBootstrapHandlesMissingProjectsDir(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv(storage.EnvRoot, root)

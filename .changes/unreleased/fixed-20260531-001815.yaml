@@ -1,0 +1,3 @@
+kind: fixed
+body: Deleting a task file outside dfc now drops it from search results instead of leaving a dead hit.
+time: 2026-05-31T00:18:15.812676-04:00
