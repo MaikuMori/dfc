@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/MaikuMori/dfc/internal/core"
@@ -44,7 +43,7 @@ func (c *CountCmd) Run() error {
 
 	switch c.Format {
 	case "prompt":
-		fmt.Println(promptCount(open, done))
+		fmt.Println(promptCount(open))
 	case "json":
 		reg := cr.Registry()
 		byTag := map[string]int{}
@@ -105,17 +104,13 @@ type countOut struct {
 	ByTag     map[string]int `json:"by_tag"`
 }
 
-// promptCount renders a compact prompt segment: "12○", "12○ 3✓", or "" when
-// there's nothing to show.
-func promptCount(open, done int) string {
-	var parts []string
-	if open > 0 {
-		parts = append(parts, fmt.Sprintf("%d○", open))
+// promptCount renders a compact prompt segment of the open-task count ("12○"),
+// or "" when there are none.
+func promptCount(open int) string {
+	if open == 0 {
+		return ""
 	}
-	if done > 0 {
-		parts = append(parts, fmt.Sprintf("%d✓", done))
-	}
-	return strings.Join(parts, " ")
+	return fmt.Sprintf("%d○", open)
 }
 
 // isToday reports whether ts falls on the current local calendar day.

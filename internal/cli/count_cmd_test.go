@@ -11,17 +11,16 @@ import (
 
 func TestPromptCount(t *testing.T) {
 	cases := []struct {
-		open, done int
-		want       string
+		open int
+		want string
 	}{
-		{2, 0, "2○"},
-		{2, 1, "2○ 1✓"},
-		{0, 1, "1✓"},
-		{0, 0, ""},
+		{2, "2○"},
+		{1, "1○"},
+		{0, ""},
 	}
 	for _, c := range cases {
-		if got := promptCount(c.open, c.done); got != c.want {
-			t.Errorf("promptCount(%d,%d) = %q, want %q", c.open, c.done, got, c.want)
+		if got := promptCount(c.open); got != c.want {
+			t.Errorf("promptCount(%d) = %q, want %q", c.open, got, c.want)
 		}
 	}
 }
@@ -54,8 +53,8 @@ func TestCountPromptAndHuman(t *testing.T) {
 	if err != nil {
 		t.Fatalf("count prompt: %v", err)
 	}
-	if strings.TrimSpace(prompt) != "1○ 1✓" {
-		t.Errorf("prompt = %q, want '1○ 1✓'", strings.TrimSpace(prompt))
+	if strings.TrimSpace(prompt) != "1○" {
+		t.Errorf("prompt = %q, want '1○'", strings.TrimSpace(prompt))
 	}
 
 	human, err := captureStdout(t, func() error {

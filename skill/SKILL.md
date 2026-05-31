@@ -198,7 +198,7 @@ dfc count [-p <slug-or-name> | -a] [--format human|prompt|json]
 Scope defaults to the cwd project (`-p` one project, `-a` all). Adds no state on disk — open/done come from the index, `done_today` from task mtimes.
 
 - `--format human` (default): `<open> open · <done> done`.
-- `--format prompt`: compact segment for shell prompts / tmux — `12○`, `12○ 3✓`, or empty when there's nothing. Built for [starship](https://starship.rs) `[custom.dfc] command = "dfc count --format prompt"`.
+- `--format prompt`: just the open count for shell prompts / tmux — `12○`, or empty when there are none. Built for [starship](https://starship.rs) `[custom.dfc] command = "dfc count --format prompt"`.
 - `--format json`: `{open, done, done_today, by_tag}`. `done_today` = done tasks last modified today; `by_tag` maps each in-scope tag to its open-task count.
 
 ### `dfc` — interactive TUI
