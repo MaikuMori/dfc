@@ -3,9 +3,38 @@ package project
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
+
+func TestRemoveTagMiddleOfList(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "projects.json")
+	r, err := loadRegistryFromPath(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Register("p", "P")
+	if err := r.SetTags("p", []string{"a", "b", "c"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.RemoveTag("p", "b"); err != nil {
+		t.Fatalf("RemoveTag: %v", err)
+	}
+	if got := r.Tags("p"); !slices.Equal(got, []string{"a", "c"}) {
+		t.Errorf("in-memory Tags = %v, want [a c]", got)
+	}
+
+	// The removal must survive a reload from disk.
+	r2, err := loadRegistryFromPath(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := r2.Tags("p"); !slices.Equal(got, []string{"a", "c"}) {
+		t.Errorf("persisted Tags = %v, want [a c]", got)
+	}
+}
 
 func TestRegistry_LoadEmpty(t *testing.T) {
 	dir := t.TempDir()
