@@ -570,6 +570,58 @@ func (c *Core) MoveTask(t storage.Task, destSlug string) (storage.Task, error) {
 	return moved, nil
 }
 
+// MergeProject folds every task in srcSlug into dstSlug, then removes the
+// (now-empty) source directory and deregisters it. Unlike RemoveProject the
+// source is NOT trashed — its files have been relocated, not deleted. The
+// destination is auto-created when unknown. Returns the number of tasks moved.
+// On a mid-merge failure it returns early before any cleanup, leaving the
+// source's remaining files intact so a re-run is idempotent.
+func (c *Core) MergeProject(srcSlug, dstSlug string) (moved int, err error) {
+	if srcSlug == "" || dstSlug == "" {
+		return 0, errors.New("missing project slug")
+	}
+	if srcSlug == dstSlug {
+		return 0, errors.New("source and destination are the same project")
+	}
+	if !storage.ProjectDirExists(srcSlug) {
+		return 0, fmt.Errorf("unknown project %q", srcSlug)
+	}
+	if err := c.EnsureProject(dstSlug, ""); err != nil {
+		return 0, err
+	}
+
+	srcStore, err := c.StoreFor(srcSlug)
+	if err != nil {
+		return 0, err
+	}
+	tasks, err := srcStore.List()
+	if err != nil {
+		return 0, err
+	}
+	for _, t := range tasks {
+		if _, err := c.MoveTask(t, dstSlug); err != nil {
+			return moved, err
+		}
+		moved++
+	}
+
+	// The source dir is now empty. Remove it without trashing (the files were
+	// relocated, not deleted), evict the cached store so a later StoreFor
+	// can't resurrect the directory, then deregister.
+	if dir, derr := storage.ProjectDirPath(srcSlug); derr == nil {
+		if rerr := os.RemoveAll(dir); rerr != nil {
+			return moved, rerr
+		}
+	}
+	c.mu.Lock()
+	delete(c.stores, srcSlug)
+	c.mu.Unlock()
+	if err := c.reg.Unregister(srcSlug); err != nil {
+		return moved, err
+	}
+	return moved, nil
+}
+
 // Show returns a task by full ULID, scanning every project.
 func (c *Core) Show(id string) (storage.Task, error) {
 	return c.show(id, "")
