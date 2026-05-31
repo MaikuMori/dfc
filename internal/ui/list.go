@@ -39,6 +39,30 @@ func renderList(m Model, width, height int) (string, []int) {
 	return body, heights
 }
 
+// rowKey captures every input that determines a single rendered row, so a
+// row can be reused from the cache whenever none of them changed. Content
+// edits are covered by modified — every Save bumps the file's mtime.
+type rowKey struct {
+	id       string
+	slug     string
+	modified int64
+	status   storage.Status
+	prefix   string
+	cursor   bool
+	expanded bool
+	width    int
+	flatDone bool
+}
+
+// rowCache holds the previous frame's per-row keys and rendered strings.
+// Navigation only changes the cursor flag on two rows, so reusing the rest
+// avoids re-wrapping and re-styling the whole list on every keypress.
+var rowCache struct {
+	sync.Mutex
+	keys []rowKey
+	rows []string
+}
+
 func buildRows(m Model, width int) (rows []string, heights []int) {
 	if len(m.tasks) == 0 {
 		return []string{styleEmpty.Render("No tasks yet.")}, []int{1}
@@ -49,18 +73,35 @@ func buildRows(m Model, width int) (rows []string, heights []int) {
 	flatDone := m.searchQuery != ""
 	rows = make([]string, len(m.tasks))
 	heights = make([]int, len(m.tasks))
+
+	rowCache.Lock()
+	defer rowCache.Unlock()
+	keys := make([]rowKey, len(m.tasks))
 	for i, t := range m.tasks {
 		prefix := projectPrefix(m, t)
+		expanded := m.expandedID != "" && t.ID == m.expandedID &&
+			(!m.globalView || t.ProjectSlug == m.expandedSlug)
+		k := rowKey{
+			id: t.ID, slug: t.ProjectSlug, modified: t.Modified.UnixNano(),
+			status: t.Status, prefix: prefix, cursor: i == m.cursor,
+			expanded: expanded, width: width, flatDone: flatDone,
+		}
+		keys[i] = k
+
 		var row string
-		if m.expandedID != "" && t.ID == m.expandedID &&
-			(!m.globalView || t.ProjectSlug == m.expandedSlug) {
+		switch {
+		case i < len(rowCache.keys) && rowCache.keys[i] == k:
+			row = rowCache.rows[i]
+		case expanded:
 			row = renderTaskMarkdown(t, prefix, width)
-		} else {
+		default:
 			row = renderRow(t, prefix, i == m.cursor, width, flatDone)
 		}
 		rows[i] = row
 		heights[i] = strings.Count(row, "\n") + 1
 	}
+	rowCache.keys = keys
+	rowCache.rows = rows
 	return rows, heights
 }
 

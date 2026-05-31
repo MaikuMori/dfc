@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
@@ -70,6 +71,22 @@ func TestRunSearchFallbackUsesSnapshot(t *testing.T) {
 	got := m.runSearchFallback()
 	if len(got.tasks) != 1 || got.tasks[0].ID != "1" {
 		t.Errorf("fallback should filter the snapshot to 1 task, got %d", len(got.tasks))
+	}
+}
+
+func TestBuildRowsCacheInvalidatesOnChange(t *testing.T) {
+	m := newTagModel(t)
+	m.width = 80
+	if _, h := buildRows(m, 80); len(h) != 3 {
+		t.Fatalf("expected 3 rows, got %d", len(h))
+	}
+
+	// A status + mtime change must invalidate that row's cache entry.
+	m.tasks[0].Status = storage.StatusDone
+	m.tasks[0].Modified = m.tasks[0].Modified.Add(time.Second)
+	rows, _ := buildRows(m, 80)
+	if !strings.Contains(rows[0], iconDone) {
+		t.Errorf("row 0 should show the done icon after a status change, got %q", rows[0])
 	}
 }
 
