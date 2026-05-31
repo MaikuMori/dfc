@@ -8,6 +8,105 @@ import (
 	"testing"
 )
 
+func TestRenameTag(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "projects.json")
+	r, err := loadRegistryFromPath(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Register("a", "A")
+	_ = r.SetTags("a", []string{"work", "oss"})
+	r.Register("b", "B")
+	_ = r.SetTags("b", []string{"Work"}) // different casing — must still match
+	r.Register("c", "C")
+	_ = r.SetTags("c", []string{"personal"})
+
+	slugs, err := r.RenameTag("work", "active", false)
+	if err != nil {
+		t.Fatalf("RenameTag: %v", err)
+	}
+	if !slices.Equal(slugs, []string{"a", "b"}) {
+		t.Errorf("affected = %v, want [a b]", slugs)
+	}
+	if got := r.Tags("a"); !slices.Equal(got, []string{"active", "oss"}) {
+		t.Errorf("a tags = %v, want [active oss]", got)
+	}
+	if got := r.Tags("b"); !slices.Equal(got, []string{"active"}) {
+		t.Errorf("b tags = %v, want [active]", got)
+	}
+	if got := r.Tags("c"); !slices.Equal(got, []string{"personal"}) {
+		t.Errorf("c (no match) tags = %v, want [personal]", got)
+	}
+
+	// Persisted to disk.
+	r2, err := loadRegistryFromPath(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := r2.Tags("a"); !slices.Equal(got, []string{"active", "oss"}) {
+		t.Errorf("persisted a tags = %v", got)
+	}
+}
+
+func TestRenameTagNoOp(t *testing.T) {
+	dir := t.TempDir()
+	r, _ := loadRegistryFromPath(filepath.Join(dir, "projects.json"))
+	r.Register("a", "A")
+	_ = r.SetTags("a", []string{"work"})
+
+	slugs, err := r.RenameTag("nonexistent", "x", false)
+	if err != nil {
+		t.Fatalf("no-op RenameTag: %v", err)
+	}
+	if len(slugs) != 0 {
+		t.Errorf("no-op should affect 0 projects, got %v", slugs)
+	}
+}
+
+func TestRenameTagConflict(t *testing.T) {
+	dir := t.TempDir()
+	r, _ := loadRegistryFromPath(filepath.Join(dir, "projects.json"))
+	r.Register("a", "A")
+	_ = r.SetTags("a", []string{"old", "new"})
+
+	if _, err := r.RenameTag("old", "new", false); err == nil {
+		t.Error("a project carrying both should error without --merge")
+	}
+	if got := r.Tags("a"); !slices.Equal(got, []string{"old", "new"}) {
+		t.Errorf("a rejected conflict must not mutate; got %v", got)
+	}
+
+	slugs, err := r.RenameTag("old", "new", true)
+	if err != nil {
+		t.Fatalf("merge RenameTag: %v", err)
+	}
+	if !slices.Equal(slugs, []string{"a"}) {
+		t.Errorf("merge affected = %v, want [a]", slugs)
+	}
+	if got := r.Tags("a"); !slices.Equal(got, []string{"new"}) {
+		t.Errorf("merge should fold to [new], got %v", got)
+	}
+}
+
+func TestRenameTagCaseChange(t *testing.T) {
+	dir := t.TempDir()
+	r, _ := loadRegistryFromPath(filepath.Join(dir, "projects.json"))
+	r.Register("a", "A")
+	_ = r.SetTags("a", []string{"work"})
+
+	slugs, err := r.RenameTag("work", "Work", false) // case-only, not a merge
+	if err != nil {
+		t.Fatalf("case-change RenameTag: %v", err)
+	}
+	if !slices.Equal(slugs, []string{"a"}) {
+		t.Errorf("case change affected = %v, want [a]", slugs)
+	}
+	if got := r.Tags("a"); !slices.Equal(got, []string{"Work"}) {
+		t.Errorf("case change should rewrite to [Work], got %v", got)
+	}
+}
+
 func TestRemoveTagMiddleOfList(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "projects.json")

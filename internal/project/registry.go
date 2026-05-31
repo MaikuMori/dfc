@@ -327,6 +327,58 @@ func (r *Registry) RemoveTag(slug, tag string) error {
 	return r.Save()
 }
 
+// RenameTag rewrites every occurrence of from to to across the registry
+// (case-insensitive match on from; to is written with the given casing).
+// Returns the slugs whose tag list changed, sorted. A no-op — no project
+// carries from — returns an empty slice and no error. When a project carries
+// both from and to the rename would merge them on that project; that errors
+// unless merge is true.
+func (r *Registry) RenameTag(from, to string, merge bool) ([]string, error) {
+	to = strings.TrimSpace(to)
+	if to == "" {
+		return nil, errors.New("new tag name is empty")
+	}
+	caseChange := strings.EqualFold(from, to)
+
+	var affected []string
+	for slug, e := range r.entries {
+		hasFrom, hasTo := false, false
+		for _, t := range e.Tags {
+			if strings.EqualFold(t, from) {
+				hasFrom = true
+			} else if strings.EqualFold(t, to) {
+				hasTo = true
+			}
+		}
+		if !hasFrom {
+			continue
+		}
+		if hasTo && !caseChange && !merge {
+			return nil, fmt.Errorf("project %q already has tag %q; renaming %q into it would merge them — pass --merge or remove %q first", slug, to, from, from)
+		}
+		affected = append(affected, slug)
+	}
+	if len(affected) == 0 {
+		return nil, nil
+	}
+
+	for _, slug := range affected {
+		e := r.entries[slug]
+		out := make([]string, 0, len(e.Tags))
+		for _, t := range e.Tags {
+			if strings.EqualFold(t, from) {
+				out = append(out, to)
+			} else {
+				out = append(out, t)
+			}
+		}
+		e.Tags = dedupeTagsCaseInsensitive(out)
+		r.entries[slug] = e
+	}
+	slices.Sort(affected)
+	return affected, r.Save()
+}
+
 // TagSummary describes one tag and the projects that carry it.
 type TagSummary struct {
 	Name  string   // display form (first-seen casing across projects)
