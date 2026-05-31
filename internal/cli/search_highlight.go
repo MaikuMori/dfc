@@ -3,6 +3,7 @@ package cli
 import (
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 // Marker tokens we use inside strings before rendering. The choice is
@@ -40,7 +41,7 @@ func highlightTerms(s string, terms []string) string {
 	if s == "" || len(terms) == 0 {
 		return s
 	}
-	lc := strings.ToLower(s)
+	lc, offs := lowerWithOffsets(s)
 	var spans []byteSpan
 	for _, t := range terms {
 		if t == "" {
@@ -52,15 +53,20 @@ func highlightTerms(s string, terms []string) string {
 			if idx < 0 {
 				break
 			}
-			pos := from + idx
-			end := pos + len(t)
+			lpos := from + idx
+			lend := lpos + len(t)
+			start, end := offs[lpos], offs[lend]
 			// Extend through the rest of the current word so the
 			// whole token is highlighted, not just the typed prefix.
-			for end < len(s) && isWordRune(rune(s[end])) {
-				end++
+			for end < len(s) {
+				r, sz := utf8.DecodeRuneInString(s[end:])
+				if !isWordRune(r) {
+					break
+				}
+				end += sz
 			}
-			spans = append(spans, byteSpan{pos, end})
-			from = end
+			spans = append(spans, byteSpan{start, end})
+			from = lend
 		}
 	}
 	if len(spans) == 0 {
@@ -198,6 +204,27 @@ func paragraphEnd(body string, pos int) int {
 		end = nextEnd
 	}
 	return end
+}
+
+// lowerWithOffsets returns strings.ToLower(s) alongside a map from each byte
+// index in the lowercased result back to the byte index in s that produced
+// it, plus one trailing entry equal to len(s). Lowercasing is not
+// byte-length-preserving (e.g. 'İ' U+0130 folds to a shorter 'i'), so spans
+// found in the lowercased text must be translated through this map before
+// they can index s — otherwise offsets drift and can slice mid-rune.
+func lowerWithOffsets(s string) (string, []int) {
+	var b strings.Builder
+	b.Grow(len(s))
+	offs := make([]int, 0, len(s)+1)
+	for i, r := range s {
+		lr := unicode.ToLower(r)
+		for k := 0; k < utf8.RuneLen(lr); k++ {
+			offs = append(offs, i)
+		}
+		b.WriteRune(lr)
+	}
+	offs = append(offs, len(s))
+	return b.String(), offs
 }
 
 func isWordRune(r rune) bool {

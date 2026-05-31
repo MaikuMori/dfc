@@ -1,0 +1,3 @@
+kind: fixed
+body: Search result highlighting handles accented and non-ASCII words correctly instead of garbling them.
+time: 2026-05-31T00:15:03.949104-04:00
