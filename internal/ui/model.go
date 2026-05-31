@@ -23,6 +23,7 @@ const (
 	modeSearch
 	modeSwitch
 	modeCaptureTarget // picker that chooses a project to capture into (global view only)
+	modeMoveTarget    // picker that chooses a project to move the cursor task into
 	modeTagEdit       // multi-select picker that edits a project's categorical tags
 	modeTagFilter     // multi-select picker that drives the global-view tag filter
 	modeHelp
@@ -57,6 +58,9 @@ type Model struct {
 
 	globalView    bool
 	capTargetSlug string         // set transiently when capturing into a picker-chosen project; "" = current store
+	moveSrcID     string         // task id being moved while modeMoveTarget is open; "" = none
+	moveSrcSlug   string         // source project slug of the task being moved
+	moveSrcIndex  int            // cursor index at move-open, for the per-project "stay put" fallback
 	lastBody      string         // last body string handed to viewport.SetContent — used to skip redundant re-splits
 	searchQuery   string         // active filter; "" = no filter
 	searchBase    []storage.Task // no-index fallback corpus, snapshotted on search entry
@@ -201,6 +205,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateSwitch(msg)
 		case modeCaptureTarget:
 			return m.updateCaptureTarget(msg)
+		case modeMoveTarget:
+			return m.updateMoveTarget(msg)
 		case modeTagEdit:
 			return m.updateTagEdit(msg)
 		case modeTagFilter:
@@ -244,6 +250,8 @@ func (m Model) View() tea.View {
 			hintText = joinBindings(keys.SwitchPickerHints())
 		case m.mode == modeCaptureTarget:
 			hintText = joinBindings(keys.CaptureTargetHints())
+		case m.mode == modeMoveTarget:
+			hintText = joinBindings(keys.MoveTargetHints())
 		case m.mode == modeTagEdit:
 			hintText = joinBindings(keys.TagEditHints())
 		case m.mode == modeTagFilter:

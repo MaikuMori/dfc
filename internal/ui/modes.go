@@ -39,6 +39,68 @@ func (m Model) updateCaptureTarget(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, textarea.Blink
 }
 
+// updateMoveTarget is the modeMoveTarget dispatcher. The user picked a
+// destination project for the task snapshotted when the overlay opened; on
+// commit it moves the task, reloads, and re-anchors the cursor — following the
+// task in global view, staying near the old slot in per-project view.
+func (m Model) updateMoveTarget(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	m.picker, cmd = m.picker.Update(msg)
+	if !m.picker.Done() {
+		return m, cmd
+	}
+	canceled := m.picker.Canceled() || m.picker.Selected() == ""
+	dest := m.picker.Selected()
+	srcID, srcSlug, srcIndex := m.moveSrcID, m.moveSrcSlug, m.moveSrcIndex
+
+	m.picker = Picker{}
+	m.mode = modeList
+	m.clearMoveSrc()
+
+	if canceled {
+		m.relayout()
+		return m, nil
+	}
+	src, ok := m.taskByIDSlug(srcID, srcSlug)
+	if !ok {
+		m.relayout()
+		return m, nil
+	}
+	if _, err := m.core.MoveTask(src, dest); err != nil {
+		m.err = err
+		m.relayout()
+		return m, nil
+	}
+	m.err = nil
+	m.status = "moved to " + dest
+	m = m.reloadActive()
+	switch i := indexByIDSlug(m.tasks, srcID, dest, m.globalView); {
+	case i >= 0:
+		m.cursor = i // global view: cursor follows the re-tagged task
+	case srcIndex < len(m.tasks):
+		m.cursor = srcIndex // per-project / filtered-out: stay near the old slot
+	default:
+		m.cursor = max(0, len(m.tasks)-1)
+	}
+	m.relayout()
+	return m, nil
+}
+
+// taskByIDSlug returns the current task matching id (slug-qualified in global
+// view), so the move commit acts on the live task rather than a stale cursor.
+func (m Model) taskByIDSlug(id, slug string) (storage.Task, bool) {
+	if i := indexByIDSlug(m.tasks, id, slug, m.globalView); i >= 0 {
+		return m.tasks[i], true
+	}
+	return storage.Task{}, false
+}
+
+func (m *Model) clearMoveSrc() {
+	m.moveSrcID = ""
+	m.moveSrcSlug = ""
+	m.moveSrcIndex = 0
+}
+
 func (m Model) updateHelp(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "ctrl+c" {
 		return m, tea.Quit
@@ -377,6 +439,28 @@ func (m Model) updateList(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m, openInEditor(m.tasks[m.cursor].Path)
+
+	case key.Matches(msg, keys.Move):
+		if len(m.tasks) == 0 {
+			return m, nil
+		}
+		src := m.tasks[m.cursor]
+		items := ProjectPickerItems(m.core.Registry(), m.core.CountsByProject())
+		items = slices.DeleteFunc(items, func(it PickerItem) bool {
+			return it.Slug == src.ProjectSlug
+		})
+		if len(items) == 0 {
+			m.status = "no other project to move to"
+			return m, nil
+		}
+		m.moveSrcID = src.ID
+		m.moveSrcSlug = src.ProjectSlug
+		m.moveSrcIndex = m.cursor
+		m.picker = NewPicker("move to:", items)
+		m.picker.OnRename = nil // keep ctrl+r/ctrl+p inert during target choice
+		m.mode = modeMoveTarget
+		m.relayout()
+		return m, m.picker.Init()
 
 	case key.Matches(msg, keys.Expand):
 		if len(m.tasks) == 0 {
