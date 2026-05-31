@@ -160,6 +160,22 @@ func TestModel_TagFilterPreviewUsesCachedBase(t *testing.T) {
 	}
 }
 
+func TestRunSearch_GlobalViewRespectsTagFilter(t *testing.T) {
+	m := newTagModel(t)
+	// "task" appears only in gamma ("lonely task"), which is untagged.
+	m.searchQuery = "task"
+	m = m.runSearch()
+	if len(m.tasks) != 1 {
+		t.Fatalf("baseline: 'task' should match gamma, got %d", len(m.tasks))
+	}
+	// A work-tag filter excludes gamma, so the indexed search must too.
+	m.tagFilter = []string{"work"}
+	m = m.runSearch()
+	if len(m.tasks) != 0 {
+		t.Errorf("work filter should exclude gamma's 'task' hit, got %d", len(m.tasks))
+	}
+}
+
 func TestModel_HeaderPostCommitCount(t *testing.T) {
 	m := newTagModel(t)
 	// Mimic updateTagFilter's commit branch.

@@ -67,12 +67,23 @@ func (m Model) runSearch() Model {
 	if !m.globalView {
 		scope = m.slug
 	}
-	hits, err := m.core.Search(m.searchQuery, index.SearchOpts{
+	opts := index.SearchOpts{
 		Project: scope,
 		Status:  "all",
 		Limit:   200,
 		SortBy:  "score",
-	})
+	}
+	if m.globalView && len(m.tagFilter) > 0 {
+		reg := m.core.Registry()
+		slugs := []string{}
+		for _, slug := range reg.Slugs() {
+			if tagFilterMatches(reg, slug, m.tagFilter) {
+				slugs = append(slugs, slug)
+			}
+		}
+		opts.Projects = slugs
+	}
+	hits, err := m.core.Search(m.searchQuery, opts)
 	if err != nil {
 		m.err = err
 		return m
