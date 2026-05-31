@@ -110,6 +110,10 @@ func (w *Watcher) Close() error {
 // dies.
 func (w *Watcher) run() {
 	defer close(w.doneRun)
+	// A panic in the watch loop must not crash the process and bypass the
+	// TUI's terminal restore. Recover and let the goroutine exit; the watch
+	// goes quiet until the next relaunch.
+	defer func() { _ = recover() }()
 	for {
 		select {
 		case <-w.stop:
