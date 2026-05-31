@@ -154,6 +154,38 @@ func TestEnsureFreshPrunesDeletedTask(t *testing.T) {
 	}
 }
 
+func TestSearchDegenerateQueriesDoNotError(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(storage.EnvRoot, root)
+	writeTask(t, "p", "fix the bug at 12:30 today")
+
+	idx, err := Open(filepath.Join(root, "index.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = idx.Close() })
+	if err := idx.Bootstrap(); err != nil {
+		t.Fatal(err)
+	}
+
+	degenerate := []string{
+		"12:30", "host:port", "foo:bar", "col:", ":",
+		"*", "*foo", "description:", "details:",
+		"AND", "OR", "NOT", "NEAR",
+		"fix AND", "bug NOT", "fix OR", "**", "  ",
+	}
+	for _, q := range degenerate {
+		if _, err := idx.Search(q, SearchOpts{}); err != nil {
+			t.Errorf("Search(%q) errored: %v", q, err)
+		}
+	}
+
+	// The column-qualifier feature still works.
+	if hits, err := idx.Search("description:bug", SearchOpts{}); err != nil || len(hits) != 1 {
+		t.Errorf("description:bug → hits=%d err=%v, want 1 hit", len(hits), err)
+	}
+}
+
 func TestBootstrapHandlesMissingProjectsDir(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv(storage.EnvRoot, root)

@@ -1,0 +1,3 @@
+kind: fixed
+body: Searches containing a colon, a bare wildcard, or an uppercase AND/OR/NOT no longer fail with a raw database error.
+time: 2026-05-31T00:21:41.503282-04:00

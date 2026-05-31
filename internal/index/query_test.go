@@ -110,6 +110,13 @@ func TestSanitizeFTSQuery(t *testing.T) {
 			"buy!",
 			`"buy!"`,
 		},
+		{"bare star dropped", "*", ""},
+		{"leading star stripped", "*foo", "foo*"},
+		{"colon is literal text", "12:30", `"12:30"`},
+		{"column qualifier", "description:bug", "description:bug*"},
+		{"empty column qualifier dropped", "description:", ""},
+		{"uppercase operator quoted", "AND", `"AND"`},
+		{"trailing operator stays valid", "fix AND", `fix* AND "AND"`},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

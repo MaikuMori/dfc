@@ -141,26 +141,25 @@ func (i *Index) Search(q string, opts SearchOpts) ([]SearchHit, error) {
 	return hits, rows.Err()
 }
 
-// sanitizeFTSQuery turns a user-typed string into an FTS5 MATCH
-// expression. The rules are deliberately small:
+// ftsColumns are the indexed columns that may be used as a `column:term`
+// qualifier. Any other prefix before a `:` is treated as literal text so
+// SQLite can't error with "no such column".
+var ftsColumns = map[string]bool{"description": true, "details": true}
+
+// sanitizeFTSQuery turns a user-typed string into an FTS5 MATCH expression
+// that can never be syntactically invalid. The rules:
 //
 //   - Quoted runs ("…") become FTS5 phrase tokens, exact match.
 //   - Bare positive terms get an implicit `*` suffix so `mac` matches
-//     `macos`, `macintosh`, etc. — most users (and agents) expect
-//     grep-like substring/prefix behavior, not strict token equality.
-//     Terms that already end in `*` or that contain punctuation
-//     forcing quoting are left exact.
-//   - A leading `-` on a token marks it as a negation. Negations stay
-//     exact (we don't want `-stale` to also exclude `staleness`).
-//   - We collect positives and negatives separately, then assemble:
-//     `(pos1 AND pos2 …) NOT (neg1 OR neg2 …)`. FTS5 only supports
-//     binary NOT, so this is the only grammatically valid shape.
-//   - Pure-negation queries (e.g. just `-bread`) return "" — FTS5
-//     can't express "everything except X" without an anchor.
-//
-// Column qualifiers like `description:foo` pass through unchanged
-// because `:` is in the safe-character set; the `*` suffix lands on
-// the value, which FTS5 interprets correctly.
+//     `macos`, `macintosh`, etc. — grep-like prefix behavior.
+//   - `description:term` / `details:term` filter to one indexed column.
+//     Any other `:` (`12:30`, `host:port`) is quoted as literal text.
+//   - A leading `-` marks a negation; negations stay exact.
+//   - Bare AND/OR/NOT/NEAR (FTS5's uppercase operators) are quoted so a
+//     literal search for one of those words can't break the grammar.
+//   - Tokens with no letters or digits (a lone `*`, `:`, …) are dropped.
+//   - We assemble `(pos1 AND pos2 …) NOT (neg1 OR neg2 …)`; an all-empty
+//     result returns "" so the caller treats it as "no matches".
 func sanitizeFTSQuery(q string) string {
 	tokens := Tokenize(q)
 	if len(tokens) == 0 {
@@ -168,17 +167,19 @@ func sanitizeFTSQuery(q string) string {
 	}
 	var pos, neg []string
 	for _, tok := range tokens {
-		if tok.Phrase {
-			// Phrases are exact matches; re-quote for FTS5.
+		if !hasAlnum(tok.Value) {
+			continue
+		}
+		switch {
+		case tok.Phrase:
 			pos = append(pos, `"`+strings.ReplaceAll(tok.Value, `"`, `""`)+`"`)
-			continue
-		}
-		if tok.Negate {
-			// Negations are exact — broad excludes are surprising.
+		case tok.Negate:
 			neg = append(neg, quoteBareToken(tok.Value))
-			continue
+		default:
+			if v := withPrefixWildcard(tok.Value); v != "" {
+				pos = append(pos, v)
+			}
 		}
-		pos = append(pos, withPrefixWildcard(tok.Value))
 	}
 	if len(pos) == 0 {
 		return "" // FTS5 has no "match everything" anchor for pure NOT.
@@ -190,41 +191,85 @@ func sanitizeFTSQuery(q string) string {
 	return expr
 }
 
-// withPrefixWildcard appends `*` to a safe bare term so the search
-// behaves like a substring/prefix match. If the term contains
-// punctuation that forces quoting, or already ends in `*`, leave it
-// alone — quoted FTS5 terms can't carry a wildcard.
+// withPrefixWildcard renders a bare positive term as an FTS5 sub-expression.
+// Safe terms get a `*` suffix for prefix matching; anything carrying
+// punctuation, a column qualifier, or an operator keyword is rewritten so the
+// result is always valid. Returns "" for a term with no searchable content.
 func withPrefixWildcard(s string) string {
+	if !hasAlnum(s) {
+		return ""
+	}
+	// Explicit trailing wildcard: prefix query on the stem.
+	if strings.HasSuffix(s, "*") {
+		stem := strings.Trim(s, "*")
+		if !hasAlnum(stem) {
+			return ""
+		}
+		if isSafeBareTerm(stem) {
+			return stem + "*"
+		}
+		return quoteBareToken(stem)
+	}
+	// Column qualifier against a real FTS column.
+	if col, val, ok := strings.Cut(s, ":"); ok && ftsColumns[strings.ToLower(col)] {
+		val = strings.Trim(val, "*")
+		if !hasAlnum(val) {
+			return ""
+		}
+		if isSafeBareTerm(val) {
+			return strings.ToLower(col) + ":" + val + "*"
+		}
+		return strings.ToLower(col) + ":" + quoteBareToken(val)
+	}
+	// Drop stray wildcards anywhere else, then prefix-match or quote.
+	s = strings.Trim(s, "*")
+	if isSafeBareTerm(s) && !isFTSKeyword(s) {
+		return s + "*"
+	}
+	return quoteBareToken(s)
+}
+
+// quoteBareToken wraps a term in an FTS5 phrase quote when it can't stand as a
+// bare token — i.e. it carries punctuation outside the safe set or is an
+// uppercase operator keyword. Embedded double-quotes are doubled per FTS5's
+// grammar.
+func quoteBareToken(s string) string {
 	if s == "" {
 		return s
 	}
-	if strings.HasSuffix(s, "*") {
-		return s
-	}
-	if !isSafeBareTerm(s) {
-		return quoteBareToken(s)
-	}
-	return s + "*"
-}
-
-// quoteBareToken safely quotes a single bare FTS5 term when it contains
-// punctuation outside the safe set; otherwise returns it unchanged.
-// Embedded double-quotes are doubled, per FTS5's grammar.
-func quoteBareToken(s string) string {
-	if s == "" || isSafeBareTerm(s) {
+	if isSafeBareTerm(s) && !isFTSKeyword(s) {
 		return s
 	}
 	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
+}
+
+// isFTSKeyword reports whether s is one of FTS5's uppercase operator keywords.
+// Only the exact uppercase form is special to the grammar; `and` is a term.
+func isFTSKeyword(s string) bool {
+	switch s {
+	case "AND", "OR", "NOT", "NEAR":
+		return true
+	}
+	return false
+}
+
+// hasAlnum reports whether s contains at least one letter or digit — i.e. any
+// content the tokenizer would keep.
+func hasAlnum(s string) bool {
+	for _, r := range s {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			return true
+		}
+	}
+	return false
 }
 
 func isSafeBareTerm(s string) bool {
 	for _, r := range s {
 		switch {
 		case unicode.IsLetter(r), unicode.IsDigit(r):
-		case r == '_' || r == '-' || r == '*' || r == ':':
-			// allow common safe punctuation: _ for identifiers, - for
-			// in-word hyphens, * for prefix queries, : for column
-			// qualifiers (description:foo).
+		case r == '_' || r == '-':
+			// allow _ for identifiers and - for in-word hyphens.
 		default:
 			return false
 		}
