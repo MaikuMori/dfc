@@ -150,12 +150,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.tagFilterBase, _ = m.core.ListAll()
 		}
 		// Keep the search index in step with whatever the filesystem
-		// changed underneath us. EnsureFresh syncs only files newer
-		// than MAX(modified) in the index, so a debounced burst of
-		// fs events collapses into one quick incremental update.
-		// Best-effort — `dfc search --reindex` is the safety net.
-		m.core.EnsureFresh()
-		return m, waitForChange(m.watchSub)
+		// changed underneath us, off the Update goroutine so the disk
+		// walk plus SQLite writes never stall a keypress. Best-effort —
+		// `dfc search --reindex` is the safety net.
+		return m, tea.Batch(waitForChange(m.watchSub), ensureFreshCmd(m.core))
 
 	case fsErrorMsg:
 		m.err = msg.err

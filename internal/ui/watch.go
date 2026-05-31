@@ -3,6 +3,7 @@ package ui
 import (
 	"errors"
 
+	"github.com/MaikuMori/dfc/internal/core"
 	"github.com/MaikuMori/dfc/internal/watch"
 	tea "charm.land/bubbletea/v2"
 )
@@ -17,6 +18,17 @@ type fsChangedMsg struct{}
 // flood the message loop. The watcher only dies at teardown, so no
 // recovery is attempted: relaunch dfc to get a live watch again.
 type fsErrorMsg struct{ err error }
+
+// ensureFreshCmd runs the index drift sync off the Update goroutine, so a
+// debounced filesystem burst doesn't block keypress handling on a disk walk
+// plus SQLite writes. The single-connection index pool serializes it against
+// any concurrent query.
+func ensureFreshCmd(c *core.Core) tea.Cmd {
+	return func() tea.Msg {
+		c.EnsureFresh()
+		return nil
+	}
+}
 
 // waitForChange returns a tea.Cmd that pulls one Event off the watch
 // subscription and forwards it as fsChangedMsg. A closed channel becomes
