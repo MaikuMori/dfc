@@ -113,17 +113,17 @@ func TrashTask(slug, taskID, desc, taskPath string) (Manifest, error) {
 	if err := os.MkdirAll(entryDir, 0o755); err != nil {
 		return Manifest{}, err
 	}
+	// Write the manifest before moving the task in. The moved file is the
+	// only copy, so it must never live in an entry that List can't read —
+	// and on any failure here entryDir holds no data, so removing it is safe.
+	if err := writeManifest(entryDir, m); err != nil {
+		_ = os.RemoveAll(entryDir)
+		return Manifest{}, err
+	}
 	dst := filepath.Join(entryDir, m.Filename)
 	if err := os.Rename(taskPath, dst); err != nil {
 		_ = os.RemoveAll(entryDir)
 		return Manifest{}, fmt.Errorf("could not move %s to trash: %w", taskPath, err)
-	}
-	if err := writeManifest(entryDir, m); err != nil {
-		// Manifest write failed but the task is already moved — try to
-		// roll the file back so the caller sees a clean failure.
-		_ = os.Rename(dst, taskPath)
-		_ = os.RemoveAll(entryDir)
-		return Manifest{}, err
 	}
 	return m, nil
 }
@@ -148,15 +148,14 @@ func TrashProject(slug, name, projectDir string) (Manifest, error) {
 	if err := os.MkdirAll(entryDir, 0o755); err != nil {
 		return Manifest{}, err
 	}
+	if err := writeManifest(entryDir, m); err != nil {
+		_ = os.RemoveAll(entryDir)
+		return Manifest{}, err
+	}
 	dst := filepath.Join(entryDir, "project")
 	if err := os.Rename(projectDir, dst); err != nil {
 		_ = os.RemoveAll(entryDir)
 		return Manifest{}, fmt.Errorf("could not move %s to trash: %w", projectDir, err)
-	}
-	if err := writeManifest(entryDir, m); err != nil {
-		_ = os.Rename(dst, projectDir)
-		_ = os.RemoveAll(entryDir)
-		return Manifest{}, err
 	}
 	return m, nil
 }
@@ -318,7 +317,24 @@ func writeManifest(entryDir string, m Manifest) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(manifestPath(entryDir), b, 0o644)
+	tmp, err := os.CreateTemp(entryDir, ".manifest-*.json.tmp")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer func() { _ = os.Remove(tmpName) }()
+	if _, err := tmp.Write(b); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, manifestPath(entryDir))
 }
 
 func readManifest(entryDir string) (Manifest, error) {
