@@ -119,6 +119,7 @@ func TestModel_HeaderShowsLivePreviewCount(t *testing.T) {
 	m.picker = newTagFilterPicker(m.core.Registry(), nil)
 	m.picker.SetWidth(m.width)
 	m.mode = modeTagFilter
+	m.tagFilterBase, _ = m.core.ListAll()
 
 	// Before any selection: header should still report the full count (3).
 	if got := m.header(); !strings.Contains(got,"all (3)") {
@@ -140,6 +141,22 @@ func TestModel_HeaderShowsLivePreviewCount(t *testing.T) {
 	m.picker.PreselectMany([]string{"(untagged)"})
 	if got := m.header(); !strings.Contains(got,"all (1)") {
 		t.Errorf("(untagged) projection should yield 1 task, got %q", got)
+	}
+}
+
+func TestModel_TagFilterPreviewUsesCachedBase(t *testing.T) {
+	m := newTagModel(t)
+	m.picker = newTagFilterPicker(m.core.Registry(), nil)
+	m.mode = modeTagFilter
+	m.tagFilterBase, _ = m.core.ListAll() // caches the 3 seeded tasks
+
+	// A capture landing after the picker opened must not change the live
+	// preview, which reads the cached base rather than re-walking disk.
+	if _, err := m.core.Capture(core.CaptureInput{Slug: "delta", Description: "late", DisplayName: "delta"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := m.header(); !strings.Contains(got, "all (3)") {
+		t.Errorf("preview should use the cached base count (3), got %q", got)
 	}
 }
 

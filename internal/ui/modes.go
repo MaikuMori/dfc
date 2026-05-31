@@ -154,6 +154,7 @@ func (m Model) updateTagFilter(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	m.picker = Picker{}
 	m.mode = modeList
+	m.tagFilterBase = nil
 	m.relayout()
 	return m, cmd
 }
@@ -319,6 +320,7 @@ func (m Model) updateList(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		m.picker = newTagFilterPicker(reg, m.tagFilter)
 		m.mode = modeTagFilter
+		m.tagFilterBase, _ = m.core.ListAll()
 		m.relayout()
 		return m, m.picker.Init()
 

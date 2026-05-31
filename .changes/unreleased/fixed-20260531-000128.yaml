@@ -1,0 +1,3 @@
+kind: fixed
+body: The tag-filter picker no longer re-reads every project from disk on each keystroke.
+time: 2026-05-31T00:01:28.267282-04:00

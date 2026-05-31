@@ -60,8 +60,9 @@ type Model struct {
 	lastBody      string // last body string handed to viewport.SetContent — used to skip redundant re-splits
 	searchQuery   string // active filter; "" = no filter
 	sortKey       sortKey
-	tagFilter     []string // session-only categorical-tag filter, applied in global view
-	tagEditSlug   string   // set transiently while modeTagEdit is running
+	tagFilter     []string       // session-only categorical-tag filter, applied in global view
+	tagFilterBase []storage.Task // pre-filter merged list, cached while the tag-filter picker is open
+	tagEditSlug   string         // set transiently while modeTagEdit is running
 }
 
 // New constructs a Model bound to the given Core, project slug, store
@@ -142,6 +143,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m = m.reloadAfterFS()
+		if m.mode == modeTagFilter {
+			m.tagFilterBase, _ = m.core.ListAll()
+		}
 		// Keep the search index in step with whatever the filesystem
 		// changed underneath us. EnsureFresh syncs only files newer
 		// than MAX(modified) in the index, so a debounced burst of
@@ -316,12 +320,13 @@ func (m Model) header() string {
 	return styleHeader.Render(name)
 }
 
-// countTasksMatchingTagFilter returns the number of tasks from the
-// full merged list (reloadAll's input, pre-filter) that would survive
-// the given tag filter. Used for live previewing the post-commit count
-// while the tag-filter picker is open.
+// countTasksMatchingTagFilter returns how many tasks from the cached
+// pre-filter list (tagFilterBase, captured when the picker opened) would
+// survive the given tag filter. Used for live previewing the post-commit
+// count while the tag-filter picker is open, without re-reading every
+// project from disk on each keystroke.
 func (m Model) countTasksMatchingTagFilter(filter []string) int {
-	all, _ := m.core.ListAll()
+	all := m.tagFilterBase
 	if len(filter) == 0 {
 		return len(all)
 	}
