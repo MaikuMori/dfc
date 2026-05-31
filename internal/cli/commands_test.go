@@ -595,7 +595,7 @@ func TestProjectsCmd_TagFilter(t *testing.T) {
 	captureNamed(t, "beta", "y")
 	_ = (&TagsAddCmd{Project: "acme", Tags: []string{"work"}}).Run()
 
-	cmd := &ProjectsCmd{Tag: []string{"work"}}
+	cmd := &ProjectsLsCmd{Tag: []string{"work"}}
 	out, err := captureStdout(t, cmd.Run)
 	if err != nil {
 		t.Fatalf("projects --tag work: %v", err)

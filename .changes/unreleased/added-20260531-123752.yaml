@@ -1,0 +1,3 @@
+kind: added
+body: 'CLI: `dfc projects rename`, `set-prefix`, and `merge` manage projects from the command line.'
+time: 2026-05-31T12:37:52.668309-04:00

@@ -10,14 +10,23 @@ import (
 	"github.com/MaikuMori/dfc/internal/project"
 )
 
-// ProjectsCmd lists every project in the registry, ordered by recency
-// (most-recently-used first; never-used entries sorted by name).
+// ProjectsCmd groups the project-management subcommands. With no subcommand
+// it lists every registered project (default shape).
 type ProjectsCmd struct {
+	Ls        ProjectsLsCmd        `cmd:"" default:"withargs" aliases:"list" help:"List every registered project (default)."`
+	Rename    ProjectsRenameCmd    `cmd:"" help:"Set a project's display name."`
+	SetPrefix ProjectsSetPrefixCmd `cmd:"" name:"set-prefix" help:"Set a project's global-view prefix."`
+	Merge     ProjectsMergeCmd     `cmd:"" help:"Fold one project's tasks into another, then remove the source."`
+}
+
+// ProjectsLsCmd lists every project in the registry, ordered by recency
+// (most-recently-used first; never-used entries sorted by name).
+type ProjectsLsCmd struct {
 	Tag  []string `name:"tag" predictor:"tag" help:"Filter to projects carrying this tag. Repeatable / comma-separated."`
 	JSON bool     `name:"json" help:"Emit one JSON object per project (NDJSON)."`
 }
 
-func (c *ProjectsCmd) Run() error {
+func (c *ProjectsLsCmd) Run() error {
 	cr, err := openCore()
 	if err != nil {
 		return err
