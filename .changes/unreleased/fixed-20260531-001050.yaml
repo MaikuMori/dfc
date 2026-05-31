@@ -1,3 +1,0 @@
-kind: fixed
-body: Undo restores the most recently deleted item when several were deleted in the same second.
-time: 2026-05-31T00:10:50.053942-04:00

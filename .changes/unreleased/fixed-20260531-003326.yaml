@@ -1,3 +1,0 @@
-kind: fixed
-body: A failed project deletion no longer drops the project's tasks from search.
-time: 2026-05-31T00:33:26.800617-04:00
