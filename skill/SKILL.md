@@ -10,8 +10,9 @@ Quick-capture task CLI. Project scope is auto-derived from the current working d
 Use it when the user asks to:
 - jot down a task ("remind me to ...", "add a todo", "track that I need to ...")
 - list, search, or filter tasks
-- mark something done / reopen / edit / delete
-- inspect or rename a project
+- mark something done / reopen / edit / delete / move between projects
+- inspect, rename, set the prefix of, or merge a project
+- rename a tag across every project
 
 ## Output modes
 
@@ -119,7 +120,15 @@ dfc rm <26-char ULID> [-a|--all-projects] [--json]
 
 Moves the task to `~/.dfc/trash/` (recoverable via `dfc undo` until the TTL sweep gets it). `--json` returns a `RmOut` with the trash entry id.
 
-**ID-lookup scope for `show / done / reopen / edit / rm`**: by default the ULID is looked up only inside the cwd-resolved project; pass `-a` / `--all-projects` to search every project. Off-project IDs without `-a` error with a `pass --all-projects` hint.
+### `dfc mv` / `dfc move` — move a task to another project
+
+```
+dfc mv <26-char ULID> <project> [-a|--all-projects] [--json]
+```
+
+Relocates the task's file into `<project>` and re-indexes it (the ULID is unchanged). `<project>` is a slug or display name, **created if new** (like `dfc c -p`). Moving into the project it's already in is a no-op (`already in <project>`). `--json` emits the moved `TaskOut` carrying its new `project`/`path`. Same TUI action as pressing `m` on a task.
+
+**ID-lookup scope for `show / done / reopen / edit / rm / mv`**: by default the ULID is looked up only inside the cwd-resolved project; pass `-a` / `--all-projects` to search every project. Off-project IDs without `-a` error with a `pass --all-projects` hint. (For `mv`, the *source* is scoped this way; the *destination* is the explicit `<project>` argument.)
 
 ### `dfc undo` — restore the most recently trashed entry
 
@@ -139,13 +148,20 @@ dfc trash empty
 
 `restore` accepts a unique prefix of the trash entry id (shown by `trash list`).
 
-### `dfc projects` — list registered projects
+### `dfc projects` — manage projects
 
 ```
-dfc projects [--tag <name>]... [--json]
+dfc projects [list]     [--tag <name>]... [--json]            # list (default)
+dfc projects rename     <slug-or-name> <new-display-name>     [--json]
+dfc projects set-prefix <slug-or-name> [<prefix>]            [--json]
+dfc projects merge      <src> <dst>                          [--json]
 ```
 
-Ordered by recency (last-used desc, then slug asc). `--tag` filters to projects carrying that tag (repeatable / comma-separated, OR semantics; `(untagged)` for projects with none).
+- **(default / `list`)**: every registered project, ordered by recency (last-used desc, then slug asc). `--tag` filters to projects carrying that tag (repeatable / comma-separated, OR semantics; `(untagged)` for projects with none). `--json` emits one `ProjectOut` per line (NDJSON).
+- **`rename <slug-or-name> <name>`**: set the display name (mirrors the TUI picker's ctrl+r). Errors if the name collides with another project. `--json` emits the updated `ProjectOut`.
+- **`set-prefix <slug-or-name> [<prefix>]`**: set the global-view prefix (mirrors ctrl+p). Omit the prefix to revert to the derived default. Errors if it collides with another project's effective prefix. `--json` emits the updated `ProjectOut`.
+- **`merge <src> <dst>`**: move every task from `src` into `dst`, then remove and deregister `src` — its files are *relocated*, not trashed. `dst` is created if new; `src` must exist; `src == dst` errors. If the `src` dir holds non-task files (a synced `.git`, notes), it's left intact with a warning instead of deleted. `--json` emits `{src, dst, moved}`.
+- Slug-or-name args are case-insensitive; `merge`'s `dst` may be a brand-new slug.
 
 ### `dfc tags` — manage project categorical tags
 
@@ -154,13 +170,15 @@ dfc tags                                        # show cwd project's tags (alias
 dfc tags show [-p <slug-or-name>] [--json]
 dfc tags add  [-p <slug-or-name>] <tag>...      # append (idempotent)
 dfc tags rm   [-p <slug-or-name>] <tag>...      # remove (case-insensitive)
-dfc tags set  [-p <slug-or-name>] <tag>...      # replace full list (empty list clears)
-dfc tags ls   [--json]                          # every distinct tag with project counts
+dfc tags set    [-p <slug-or-name>] <tag>...    # replace full list (empty list clears)
+dfc tags rename <old> <new> [--merge]           # rename a tag across every project
+dfc tags ls     [--json]                        # every distinct tag with project counts
 ```
 
 - Default target is the cwd-resolved project; `--project/-p` overrides (slug or display name, case-insensitive).
 - Tag args accept comma-separated *or* repeated values: `dfc tags add work,oss` ≡ `dfc tags add work oss`.
 - Tag names are stored case-preserving but compared case-insensitively. Many-to-many across projects (a tag like `work` lives on every project you tag with it; the registry stores it once per project).
+- `tags rename <old> <new>` is **cross-registry**: it rewrites every project carrying `old` (case-insensitive match) to `new` (written with the given casing). No-op (exit 0) when no project carries `old`. A project carrying *both* `old` and `new` errors unless you pass `--merge` (which folds them). `--json` emits `{renamed: <count>, projects: [<slug>...]}`.
 - `tags show` / `tags add` / `tags rm` / `tags set` emit `{slug, tags}` with `--json`. `tags ls` emits one `{name, projects}` object per tag (NDJSON).
 
 ### `dfc project` — print the project resolved from cwd
@@ -196,24 +214,36 @@ Bubbletea TUI. Requires a TTY. Press `?` inside for a key reference. Not invoked
 { "task": { /* TaskOut */ }, "score": 4.5, "snippet": "buy <mark>milk</mark> and bread" }
 ```
 
-`ProjectOut` (projects / project):
+`ProjectOut` (projects list / project / projects rename / projects set-prefix):
 ```json
 {
   "slug": "github-com-acme-widget",
   "name": "Acme Widget",
   "prefix": "widget",
-  "tags": ["work", "client-a"],
+  "open": 3,
+  "done": 12,
   "last_used": "2026-05-14T20:46:44Z",
   "source": "git-remote",
   "raw": "github.com/acme/widget"
 }
 ```
-`source` and `raw` only present in `project` output. `tags` and `prefix` may be omitted when empty.
+`open`/`done` are the task counts. `source` and `raw` are present only in `project` (cwd) output; `last_used` is omitted when the project was never used. (Tags live under `dfc tags`, not in this row.)
 
 `RmOut` (rm):
 ```json
 { "id": "01K...", "project": "github-com-acme-widget", "path": "/.../*.md", "trash_id": "01K..." }
 ```
+
+`projects merge`:
+```json
+{ "src": "github-com-acme-old", "dst": "github-com-acme-widget", "moved": 7 }
+```
+
+`tags rename`:
+```json
+{ "renamed": 3, "projects": ["github-com-acme-widget", "users-me-notes", "..."] }
+```
+`renamed` is the project count; `projects` is `[]` on a no-op. (`projects rename` / `set-prefix` and `mv` reuse `ProjectOut` / `TaskOut` above.)
 
 ## Filesystem layout
 
@@ -264,6 +294,15 @@ Optional details body.
 
 - **Find tasks in the current project, JSON for further parsing:**
   `dfc s migration --json`
+
+- **Move a task to another project (e.g. archive it):**
+  `dfc mv -a 01KRJF7R2RNCANPQGEXG610N8P archive`
+
+- **Fold a retired project's tasks into another, then drop it:**
+  `dfc projects merge github-com-acme-old github-com-acme-widget`
+
+- **Rename a tag everywhere at once:**
+  `dfc tags rename wip in-progress`
 
 - **Resolve the slug to use programmatically:**
   `dfc project --json | jq -r .slug`
