@@ -77,7 +77,7 @@ func (s *Store) createUnique(filenameSlug, id string, b []byte) (string, error) 
 			return "", fmt.Errorf("could not write %s: %w", path, err)
 		}
 		if _, err := f.Write(b); err != nil {
-			f.Close()
+			_ = f.Close()
 			return "", fmt.Errorf("could not write %s: %w", path, err)
 		}
 		if err := f.Close(); err != nil {
