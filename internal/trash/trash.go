@@ -45,6 +45,8 @@ type Manifest struct {
 	Kind        Kind      `json:"kind"`
 	Slug        string    `json:"slug"`
 	Name        string    `json:"name,omitempty"`         // project display name (kind=project)
+	Prefix      string    `json:"prefix,omitempty"`       // custom display prefix (kind=project)
+	Tags        []string  `json:"tags,omitempty"`         // categorical tags (kind=project)
 	TaskID      string    `json:"task_id,omitempty"`      // ULID of the trashed task (kind=task)
 	Description string    `json:"description,omitempty"`  // task heading (kind=task)
 	Filename    string    `json:"filename,omitempty"`     // basename inside project dir (kind=task)
@@ -130,8 +132,10 @@ func TrashTask(slug, taskID, desc, taskPath string) (Manifest, error) {
 	return m, nil
 }
 
-// TrashProject moves an entire project directory into the trash.
-func TrashProject(slug, name, projectDir string) (Manifest, error) {
+// TrashProject moves an entire project directory into the trash, capturing
+// the project's display name, custom prefix, and tags so a restore can put
+// them back.
+func TrashProject(slug, name, prefix string, tags []string, projectDir string) (Manifest, error) {
 	if projectDir == "" {
 		return Manifest{}, errors.New("missing project directory")
 	}
@@ -144,6 +148,8 @@ func TrashProject(slug, name, projectDir string) (Manifest, error) {
 		Kind:      KindProject,
 		Slug:      slug,
 		Name:      name,
+		Prefix:    prefix,
+		Tags:      tags,
 		DeletedAt: time.Now().UTC().Truncate(time.Second),
 	}
 	entryDir := filepath.Join(root, m.ID)

@@ -178,12 +178,15 @@ func TestTrashProjectAndRestoreRoundtrip(t *testing.T) {
 	}
 	_ = os.WriteFile(filepath.Join(projectDir, "01ab-x.md"), []byte("body"), 0o644)
 
-	m, err := TrashProject("doomed", "Doomed", projectDir)
+	m, err := TrashProject("doomed", "Doomed", "dm", []string{"work"}, projectDir)
 	if err != nil {
 		t.Fatalf("TrashProject: %v", err)
 	}
 	if m.Kind != KindProject || m.Slug != "doomed" || m.Name != "Doomed" {
 		t.Errorf("manifest = %+v", m)
+	}
+	if m.Prefix != "dm" || len(m.Tags) != 1 || m.Tags[0] != "work" {
+		t.Errorf("manifest prefix/tags = %q/%v, want dm/[work]", m.Prefix, m.Tags)
 	}
 	if _, err := os.Stat(projectDir); !os.IsNotExist(err) {
 		t.Errorf("project dir should be gone; got %v", err)

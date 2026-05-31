@@ -351,7 +351,11 @@ func (c *Core) RemoveProject(slug string) (removed int, trashID string, err erro
 		if err != nil {
 			return 0, "", err
 		}
-		m, err := trash.TrashProject(slug, c.reg.Name(slug), store.Dir())
+		prefix := c.reg.Prefix(slug)
+		if prefix == project.DefaultPrefix(slug) {
+			prefix = "" // derived default, re-derivable on restore
+		}
+		m, err := trash.TrashProject(slug, c.reg.Name(slug), prefix, c.reg.Tags(slug), store.Dir())
 		if err != nil {
 			return 0, "", err
 		}
@@ -452,13 +456,22 @@ func (c *Core) restore(e trash.Entry) (trash.Manifest, error) {
 		if err := trash.RestoreProject(e, dest); err != nil {
 			return trash.Manifest{}, err
 		}
-		if e.Name != "" {
-			c.reg.Register(e.Slug, e.Name)
-		} else {
-			c.reg.Register(e.Slug, e.Slug)
+		name := e.Name
+		if name == "" {
+			name = e.Slug
 		}
-		if err := c.reg.Save(); err != nil {
+		c.reg.Register(e.Slug, name)
+		// Put the project's saved tags and prefix back, overwriting whatever a
+		// stale registry stub for this slug might have carried. SetTags also
+		// persists the registration. A prefix that now collides with another
+		// project's is dropped (the row falls back to the derived default).
+		if err := c.reg.SetTags(e.Slug, e.Tags); err != nil {
 			return trash.Manifest{}, err
+		}
+		if e.Prefix != "" {
+			if err := c.reg.SetPrefix(e.Slug, e.Prefix); err != nil {
+				c.warn("restore project prefix", err)
+			}
 		}
 		// Re-index every task we just restored.
 		store, err := c.StoreFor(e.Slug)

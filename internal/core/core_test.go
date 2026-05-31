@@ -3,6 +3,7 @@ package core
 import (
 	"errors"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -571,6 +572,33 @@ func TestReloadRegistryPicksUpExternalChange(t *testing.T) {
 	}
 	if got := cr.Registry().Name("beta"); got != "Beta" {
 		t.Errorf("name = %q, want Beta", got)
+	}
+}
+
+func TestProjectUndoRestoresMetadata(t *testing.T) {
+	cr := newTestCore(t)
+	if _, err := cr.Capture(CaptureInput{Slug: "proj", Description: "x"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cr.Registry().SetPrefix("proj", "PJ"); err != nil {
+		t.Fatal(err)
+	}
+	if err := cr.Registry().SetTags("proj", []string{"work", "oss"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, _, err := cr.RemoveProject("proj"); err != nil {
+		t.Fatalf("RemoveProject: %v", err)
+	}
+	if _, err := cr.Undo(); err != nil {
+		t.Fatalf("Undo: %v", err)
+	}
+
+	if got := cr.Registry().Prefix("proj"); got != "PJ" {
+		t.Errorf("prefix after restore = %q, want PJ", got)
+	}
+	if got := cr.Registry().Tags("proj"); !slices.Equal(got, []string{"work", "oss"}) {
+		t.Errorf("tags after restore = %v, want [work oss]", got)
 	}
 }
 
