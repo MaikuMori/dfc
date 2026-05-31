@@ -189,6 +189,18 @@ dfc project [--json]
 
 Useful for "which slug am I in right now?". JSON also includes `source` (`git-remote` | `git-toplevel` | `cwd`) and `raw` (pre-slug canonical form).
 
+### `dfc count` — task counts for status lines
+
+```
+dfc count [-p <slug-or-name> | -a] [--format human|prompt|json]
+```
+
+Scope defaults to the cwd project (`-p` one project, `-a` all). Adds no state on disk — open/done come from the index, `done_today` from task mtimes.
+
+- `--format human` (default): `<open> open · <done> done`.
+- `--format prompt`: compact segment for shell prompts / tmux — `12○`, `12○ 3✓`, or empty when there's nothing. Built for [starship](https://starship.rs) `[custom.dfc] command = "dfc count --format prompt"`.
+- `--format json`: `{open, done, done_today, by_tag}`. `done_today` = done tasks last modified today; `by_tag` maps each in-scope tag to its open-task count.
+
 ### `dfc` — interactive TUI
 
 Bubbletea TUI. Requires a TTY. Press `?` inside for a key reference. Not invoked from agents — use the subcommands above.

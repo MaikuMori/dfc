@@ -101,6 +101,21 @@ source <(dfc completion zsh)
 dfc completion fish > ~/.config/fish/completions/dfc.fish
 ```
 
+## Status line
+
+`dfc count --format prompt` prints a compact segment (`12○`, `12○ 3✓`, or nothing) for the cwd project — drop it into [starship](https://starship.rs):
+
+```toml
+# ~/.config/starship.toml
+[custom.dfc]
+command = "dfc count --format prompt"
+when = true
+format = "[$output]($style) "
+style = "bold yellow"
+```
+
+`--format json` (`{open, done, done_today, by_tag}`) feeds fancier prompts and tmux right-status; bare `dfc count` is human-readable. Add `-a` to count every project instead of the cwd one.
+
 ## Storage
 
 ```text
