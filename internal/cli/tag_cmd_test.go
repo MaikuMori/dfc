@@ -35,6 +35,34 @@ func TestTagsRenameCommand(t *testing.T) {
 	}
 }
 
+func TestTagsRenameConflictAndMerge(t *testing.T) {
+	setupDFCRoot(t)
+	captureNamed(t, "a", "x")
+	_ = (&TagsSetCmd{Project: "a", Tags: []string{"old", "new"}}).Run()
+
+	// A project carrying both must error without --merge.
+	_, err := captureStdout(t, func() error {
+		return (&TagsRenameCmd{Old: "old", New: "new"}).Run()
+	})
+	if err == nil || !strings.Contains(err.Error(), "--merge") {
+		t.Errorf("conflict should error mentioning --merge, got %v", err)
+	}
+
+	// --merge folds them.
+	if _, err := captureStdout(t, func() error {
+		return (&TagsRenameCmd{Merge: true, Old: "old", New: "new"}).Run()
+	}); err != nil {
+		t.Fatalf("merge rename: %v", err)
+	}
+	reg, err := project.LoadRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := reg.Tags("a"); !slices.Equal(got, []string{"new"}) {
+		t.Errorf("after --merge, a should carry [new], got %v", got)
+	}
+}
+
 func TestTagsRenameNoOpJSON(t *testing.T) {
 	setupDFCRoot(t)
 	captureNamed(t, "a", "x")

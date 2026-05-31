@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -8,6 +9,67 @@ import (
 	"github.com/MaikuMori/dfc/internal/project"
 	"github.com/MaikuMori/dfc/internal/storage"
 )
+
+func TestProjectsMerge_JSON(t *testing.T) {
+	setupDFCRoot(t)
+	captureNamed(t, "src", "a")
+	captureNamed(t, "src", "b")
+	captureNamed(t, "dst", "c")
+
+	out, err := captureStdout(t, func() error {
+		return (&ProjectsMergeCmd{JSON: true, Src: "src", Dst: "dst"}).Run()
+	})
+	if err != nil {
+		t.Fatalf("merge: %v", err)
+	}
+	var got struct {
+		Src   string `json:"src"`
+		Dst   string `json:"dst"`
+		Moved int    `json:"moved"`
+	}
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("unmarshal %q: %v", out, err)
+	}
+	if got.Src != "src" || got.Dst != "dst" || got.Moved != 2 {
+		t.Errorf("json = %+v, want {src dst 2}", got)
+	}
+}
+
+func TestProjectsMerge_CreatesNewDst(t *testing.T) {
+	setupDFCRoot(t)
+	captureNamed(t, "src", "a")
+
+	if _, err := captureStdout(t, func() error {
+		return (&ProjectsMergeCmd{Src: "src", Dst: "fresh"}).Run()
+	}); err != nil {
+		t.Fatalf("merge into a new dst: %v", err)
+	}
+	cr := openMutCore(t)
+	defer func() { _ = cr.Close() }()
+	if !cr.Registry().Has("fresh") {
+		t.Errorf("the new destination should be registered")
+	}
+	if dst, _ := cr.List("fresh"); len(dst) != 1 {
+		t.Errorf("new dst should hold the moved task, got %d", len(dst))
+	}
+	if storage.ProjectDirExists("src") {
+		t.Errorf("src dir should be gone after merge")
+	}
+}
+
+func TestProjectsSetPrefix_JSON(t *testing.T) {
+	setupDFCRoot(t)
+	captureNamed(t, "acme", "x")
+	out, err := captureStdout(t, func() error {
+		return (&ProjectsSetPrefixCmd{JSON: true, Project: "acme", Prefix: "ac"}).Run()
+	})
+	if err != nil {
+		t.Fatalf("set-prefix: %v", err)
+	}
+	if !strings.Contains(out, `"prefix":"ac"`) || !strings.Contains(out, `"slug":"acme"`) {
+		t.Errorf("json should carry slug+prefix, got %q", out)
+	}
+}
 
 func openMutCore(t *testing.T) *core.Core {
 	t.Helper()
