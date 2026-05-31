@@ -73,6 +73,13 @@ func (m Model) updateMoveTarget(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	m.err = nil
 	m.status = "moved to " + dest
+	if m.globalView {
+		// The destination dir may have been (re)created by the move; keep the
+		// global watch set covering it so its changes stream live.
+		if err := m.refreshWatches(); err != nil {
+			m.err = err
+		}
+	}
 	m = m.reloadActive()
 	switch i := indexByIDSlug(m.tasks, srcID, dest, m.globalView); {
 	case i >= 0:
@@ -457,7 +464,7 @@ func (m Model) updateList(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.moveSrcSlug = src.ProjectSlug
 		m.moveSrcIndex = m.cursor
 		m.picker = NewPicker("move to:", items)
-		m.picker.OnRename = nil // keep ctrl+r/ctrl+p inert during target choice
+		m.picker.OnRename = nil // keep ctrl+r inert during target choice
 		m.mode = modeMoveTarget
 		m.relayout()
 		return m, m.picker.Init()
