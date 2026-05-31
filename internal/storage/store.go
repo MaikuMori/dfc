@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/MaikuMori/dfc/internal/fsutil"
 )
 
 // Store is a per-project task store backed by a directory of .md files.
@@ -114,7 +116,7 @@ func (s *Store) Save(t *Task) error {
 	if err != nil {
 		return err
 	}
-	if err := writeFileAtomic(t.Path, b, 0o644); err != nil {
+	if err := fsutil.WriteFileAtomic(t.Path, b, 0o644); err != nil {
 		return err
 	}
 	if err := stampMtime(t); err != nil {

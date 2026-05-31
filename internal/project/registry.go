@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/MaikuMori/dfc/internal/fsutil"
 )
 
 // envRoot mirrors storage.EnvRoot. Duplicated to avoid an import cycle
@@ -91,7 +93,7 @@ func (r *Registry) Save() error {
 		return err
 	}
 	b = append(b, '\n')
-	return writeFileAtomic(r.path, b, 0o644)
+	return fsutil.WriteFileAtomic(r.path, b, 0o644)
 }
 
 // Name returns the friendly name for slug, falling back to the slug itself

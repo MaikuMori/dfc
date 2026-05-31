@@ -1,15 +1,17 @@
-package storage
+// Package fsutil holds small filesystem helpers shared by the
+// storage-facing packages (project registry, task store, trash).
+package fsutil
 
 import (
 	"os"
 	"path/filepath"
 )
 
-// writeFileAtomic writes data to a temp file in path's directory and renames
+// WriteFileAtomic writes data to a temp file in path's directory and renames
 // it over path. A crash or partial write can never leave path truncated: a
 // reader sees either the previous complete file or the new one. The temp file
 // is removed on any error before the rename.
-func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
+func WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
 	f, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".tmp-*")
 	if err != nil {
 		return err

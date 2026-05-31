@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MaikuMori/dfc/internal/fsutil"
 	"github.com/MaikuMori/dfc/internal/storage"
 	"github.com/oklog/ulid/v2"
 )
@@ -317,24 +318,7 @@ func writeManifest(entryDir string, m Manifest) error {
 	if err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(entryDir, ".manifest-*.json.tmp")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	defer func() { _ = os.Remove(tmpName) }()
-	if _, err := tmp.Write(b); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmpName, manifestPath(entryDir))
+	return fsutil.WriteFileAtomic(manifestPath(entryDir), b, 0o644)
 }
 
 func readManifest(entryDir string) (Manifest, error) {
