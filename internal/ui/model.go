@@ -57,7 +57,8 @@ type Model struct {
 	globalView    bool
 	capTargetSlug string // set transiently when capturing into a picker-chosen project; "" = current store
 	lastBody      string // last body string handed to viewport.SetContent — used to skip redundant re-splits
-	searchQuery   string // active filter; "" = no filter
+	searchQuery   string         // active filter; "" = no filter
+	searchBase    []storage.Task // no-index fallback corpus, snapshotted on search entry
 	sortKey       sortKey
 	tagFilter     []string       // session-only categorical-tag filter, applied in global view
 	tagFilterBase []storage.Task // pre-filter merged list, cached while the tag-filter picker is open
@@ -135,6 +136,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.globalView && !equalStringSets(prevSlugs, slugSetSnapshot(m.core.Registry())) {
 			if err := m.refreshWatches(); err != nil {
 				m.err = err
+			}
+		}
+		if m.searchBase != nil {
+			if m.globalView {
+				m.searchBase = m.reloadAll().tasks
+			} else {
+				m.searchBase = m.reload().tasks
 			}
 		}
 		m = m.reloadAfterFS()

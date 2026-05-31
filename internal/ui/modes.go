@@ -483,6 +483,15 @@ func (m Model) updateList(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, keys.Search):
 		m.mode = modeSearch
+		if !m.core.HasIndex() {
+			// Snapshot the corpus once so per-keystroke filtering doesn't
+			// re-read every task from disk while the index is unavailable.
+			if m.globalView {
+				m.searchBase = m.reloadAll().tasks
+			} else {
+				m.searchBase = m.reload().tasks
+			}
+		}
 		m.input.Reset()
 		m.input.Placeholder = "filter"
 		m.input.SetValue(m.searchQuery)
@@ -651,5 +660,6 @@ func (m *Model) exitInput() {
 	// Always drop any pending capture target — picker cancel, capture
 	// cancel, commit success, and commit failure all flow through here.
 	m.capTargetSlug = ""
+	m.searchBase = nil
 	m.relayout()
 }

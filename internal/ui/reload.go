@@ -105,11 +105,13 @@ func (m Model) runSearchFallback() Model {
 	if q == "" {
 		return m
 	}
-	var base []storage.Task
-	if m.globalView {
-		base = m.reloadAll().tasks
-	} else {
-		base = m.reload().tasks
+	base := m.searchBase
+	if base == nil {
+		if m.globalView {
+			base = m.reloadAll().tasks
+		} else {
+			base = m.reload().tasks
+		}
 	}
 	var filtered []storage.Task
 	for _, t := range base {

@@ -55,6 +55,22 @@ func newTagModel(t *testing.T) Model {
 	return m
 }
 
+func TestRunSearchFallbackUsesSnapshot(t *testing.T) {
+	m := newTagModel(t)
+	// A snapshot that does not exist on disk — if the fallback re-read the
+	// corpus it would never see these tasks.
+	m.searchBase = []storage.Task{
+		{ID: "1", Description: "buy milk", ProjectSlug: "acme"},
+		{ID: "2", Description: "walk dog", ProjectSlug: "acme"},
+	}
+	m.searchQuery = "milk"
+
+	got := m.runSearchFallback()
+	if len(got.tasks) != 1 || got.tasks[0].ID != "1" {
+		t.Errorf("fallback should filter the snapshot to 1 task, got %d", len(got.tasks))
+	}
+}
+
 func TestTagFilterMatchesParityWithCLI(t *testing.T) {
 	root := t.TempDir()
 	regPath := filepath.Join(root, "projects.json")
