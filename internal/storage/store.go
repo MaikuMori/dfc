@@ -114,7 +114,7 @@ func (s *Store) Save(t *Task) error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(t.Path, b, 0o644); err != nil {
+	if err := writeFileAtomic(t.Path, b, 0o644); err != nil {
 		return err
 	}
 	if err := stampMtime(t); err != nil {
@@ -151,15 +151,25 @@ func (s *Store) List() ([]Task, error) {
 		return nil, err
 	}
 	tasks := make([]Task, 0, len(entries))
+	var firstErr error
 	for _, e := range entries {
 		if e.IsDir() || filepath.Ext(e.Name()) != ".md" {
 			continue
 		}
 		t, err := s.Load(filepath.Join(s.dir, e.Name()))
 		if err != nil {
-			return nil, err
+			// One unparseable file (editor swap, partial sync) must not
+			// blind the whole project. Surface an error only if nothing
+			// at all could be read.
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
 		}
 		tasks = append(tasks, t)
+	}
+	if len(tasks) == 0 && firstErr != nil {
+		return nil, firstErr
 	}
 	sort.Slice(tasks, func(i, j int) bool {
 		return tasks[i].Modified.Before(tasks[j].Modified)

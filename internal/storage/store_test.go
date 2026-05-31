@@ -74,6 +74,31 @@ func TestRenameForDescriptionRefusesCollision(t *testing.T) {
 	}
 }
 
+func TestListSkipsUnparseableFile(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(EnvRoot, root)
+	s, err := Open("p")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now().UTC().Truncate(time.Second)
+	if _, err := s.Create(Task{ID: "0123456789AAAAAAAAAAAAAAAA", Status: StatusOpen, Created: now, Description: "good"}, "0123456789-good"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(s.Dir(), "0123456789-bad.md"), []byte("not valid frontmatter"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	list, err := s.List()
+	if err != nil {
+		t.Fatalf("List should tolerate one bad file: %v", err)
+	}
+	if len(list) != 1 || list[0].Description != "good" {
+		t.Fatalf("List = %+v, want only the good task", list)
+	}
+}
+
 func TestStoreCRUD(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv(EnvRoot, root)
