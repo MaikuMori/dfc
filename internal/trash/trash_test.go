@@ -110,6 +110,33 @@ func TestTTLFromEnvNonPositiveFallsBack(t *testing.T) {
 	}
 }
 
+func TestRestoreTaskClearsEntry(t *testing.T) {
+	isolate(t)
+	taskPath := writeFakeTask(t, "01abcdef00-fake", "body")
+	m, err := TrashTask("p", "01ABCDEFGHJKMNPQRSTVWXYZ12", "heading", taskPath)
+	if err != nil {
+		t.Fatalf("TrashTask: %v", err)
+	}
+	entry, err := Find(m.ID)
+	if err != nil {
+		t.Fatalf("Find: %v", err)
+	}
+	destDir, err := storage.ProjectDir("p")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := RestoreTask(entry, destDir); err != nil {
+		t.Fatalf("RestoreTask: %v", err)
+	}
+
+	if _, err := os.Stat(manifestPath(entry.Dir)); !os.IsNotExist(err) {
+		t.Errorf("manifest should be gone after restore (no zombie entry)")
+	}
+	if l, _ := List(); len(l) != 0 {
+		t.Errorf("restored entry should not re-list, got %d", len(l))
+	}
+}
+
 func TestTrashTaskAndRestoreRoundtrip(t *testing.T) {
 	isolate(t)
 	taskPath := writeFakeTask(t, "01abcdef00-fake", "body")

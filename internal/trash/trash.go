@@ -181,10 +181,12 @@ func RestoreTask(e Entry, taskDestDir string) (string, error) {
 	if err := os.Rename(src, dst); err != nil {
 		return "", fmt.Errorf("could not restore task: %w", err)
 	}
-	if err := os.RemoveAll(e.Dir); err != nil {
-		// File restored successfully; trash dir cleanup is best-effort.
-		return dst, nil
-	}
+	// Remove the manifest before the recursive cleanup: once the file is
+	// back, a leftover manifest would re-list an entry whose data is gone,
+	// and that entry can't be restored again. A single-file unlink is far
+	// more reliable than the RemoveAll that follows.
+	_ = os.Remove(manifestPath(e.Dir))
+	_ = os.RemoveAll(e.Dir)
 	return dst, nil
 }
 
@@ -205,6 +207,7 @@ func RestoreProject(e Entry, projectDest string) error {
 	if err := os.Rename(src, projectDest); err != nil {
 		return fmt.Errorf("could not restore project: %w", err)
 	}
+	_ = os.Remove(manifestPath(e.Dir))
 	_ = os.RemoveAll(e.Dir)
 	return nil
 }
