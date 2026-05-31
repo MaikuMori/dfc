@@ -1,3 +1,0 @@
-kind: fixed
-body: A corrupt task file no longer hides the rest of its project, and task edits are saved atomically.
-time: 2026-05-31T00:16:18.06804-04:00

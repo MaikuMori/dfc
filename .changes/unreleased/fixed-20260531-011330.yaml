@@ -1,3 +1,0 @@
-kind: fixed
-body: Project prefixes with emoji or wide characters align correctly and no longer truncate mid-character in global view.
-time: 2026-05-31T01:13:30.237769-04:00

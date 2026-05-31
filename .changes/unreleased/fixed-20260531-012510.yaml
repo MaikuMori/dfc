@@ -1,3 +1,0 @@
-kind: fixed
-body: Restoring an item from trash always clears its entry, even if directory cleanup fails.
-time: 2026-05-31T01:25:10.036222-04:00

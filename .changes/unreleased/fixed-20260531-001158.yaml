@@ -1,3 +1,0 @@
-kind: fixed
-body: Deleting a task or project can no longer strand or lose it if interrupted mid-delete.
-time: 2026-05-31T00:11:58.296841-04:00

@@ -1,3 +1,0 @@
-kind: fixed
-body: Restoring a deleted project from trash restores its custom prefix and tags, not just its name.
-time: 2026-05-31T01:57:47.214405-04:00

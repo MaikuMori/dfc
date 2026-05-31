@@ -1,3 +1,0 @@
-kind: fixed
-body: TUI and inline capture now treat the numpad Enter key the same as the main Enter key.
-time: 2026-05-24T20:38:41.58693-04:00
