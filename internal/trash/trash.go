@@ -10,12 +10,13 @@
 package trash
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -235,13 +236,13 @@ func List() ([]Entry, error) {
 		}
 		out = append(out, Entry{Manifest: m, Dir: entryDir})
 	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].DeletedAt.Equal(out[j].DeletedAt) {
+	slices.SortFunc(out, func(a, b Entry) int {
+		if a.DeletedAt.Equal(b.DeletedAt) {
 			// ULIDs are monotonic, so the larger id is the later delete —
 			// keeps same-second entries in a stable, newest-first order.
-			return out[i].ID > out[j].ID
+			return cmp.Compare(b.ID, a.ID)
 		}
-		return out[i].DeletedAt.After(out[j].DeletedAt)
+		return b.DeletedAt.Compare(a.DeletedAt)
 	})
 	return out, nil
 }

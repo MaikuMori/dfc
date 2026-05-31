@@ -1,8 +1,9 @@
 package ui
 
 import (
+	"cmp"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 
 	"charm.land/bubbles/v2/textinput"
@@ -29,13 +30,12 @@ func ProjectPickerItems(reg *project.Registry, counts map[string]index.ProjectCo
 			Done:   c.Done,
 		})
 	}
-	sort.SliceStable(items, func(i, j int) bool {
-		ai := reg.LastUsed(items[i].Slug)
-		aj := reg.LastUsed(items[j].Slug)
-		if !ai.Equal(aj) {
-			return ai.After(aj)
+	slices.SortStableFunc(items, func(a, b PickerItem) int {
+		la, lb := reg.LastUsed(a.Slug), reg.LastUsed(b.Slug)
+		if !la.Equal(lb) {
+			return lb.Compare(la)
 		}
-		return items[i].Name < items[j].Name
+		return cmp.Compare(a.Name, b.Name)
 	})
 	return items
 }

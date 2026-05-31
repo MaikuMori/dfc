@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/MaikuMori/dfc/internal/project"
@@ -98,11 +98,11 @@ func (c *LsCmd) Run() error {
 
 	// Newest first by the chosen timestamp. Stable so equal stamps preserve
 	// relative order.
-	sort.SliceStable(tasks, func(i, j int) bool {
+	slices.SortStableFunc(tasks, func(a, b storage.Task) int {
 		if c.Sort == "created" {
-			return tasks[i].Created.After(tasks[j].Created)
+			return b.Created.Compare(a.Created)
 		}
-		return tasks[i].Modified.After(tasks[j].Modified)
+		return b.Modified.Compare(a.Modified)
 	})
 
 	if c.JSON {

@@ -6,7 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/MaikuMori/dfc/internal/fsutil"
@@ -173,8 +173,8 @@ func (s *Store) List() ([]Task, error) {
 	if len(tasks) == 0 && firstErr != nil {
 		return nil, firstErr
 	}
-	sort.Slice(tasks, func(i, j int) bool {
-		return tasks[i].Modified.Before(tasks[j].Modified)
+	slices.SortFunc(tasks, func(a, b Task) int {
+		return a.Modified.Compare(b.Modified)
 	})
 	return tasks, nil
 }

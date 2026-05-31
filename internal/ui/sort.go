@@ -1,7 +1,7 @@
 package ui
 
 import (
-	"sort"
+	"slices"
 	"time"
 
 	"github.com/MaikuMori/dfc/internal/project"
@@ -41,13 +41,16 @@ func (k sortKey) next() sortKey {
 func sortDoneFirst(tasks []storage.Task, key sortKey) []storage.Task {
 	out := make([]storage.Task, len(tasks))
 	copy(out, tasks)
-	sort.SliceStable(out, func(i, j int) bool {
-		di := out[i].Status == storage.StatusDone
-		dj := out[j].Status == storage.StatusDone
-		if di != dj {
-			return di // done zone before open zone
+	slices.SortStableFunc(out, func(a, b storage.Task) int {
+		da := a.Status == storage.StatusDone
+		db := b.Status == storage.StatusDone
+		if da != db {
+			if da {
+				return -1 // done zone before open zone
+			}
+			return 1
 		}
-		return timeForKey(out[i], key).Before(timeForKey(out[j], key))
+		return timeForKey(a, key).Compare(timeForKey(b, key))
 	})
 	return out
 }

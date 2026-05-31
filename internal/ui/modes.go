@@ -1,8 +1,9 @@
 package ui
 
 import (
+	"cmp"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/MaikuMori/dfc/internal/capture"
@@ -191,11 +192,11 @@ func tagPickerItems(reg *project.Registry, includeUntagged bool) []PickerItem {
 	for _, s := range summaries {
 		items = append(items, PickerItem{Slug: s.Name, Name: s.Name, Count: len(s.Slugs)})
 	}
-	sort.SliceStable(items, func(i, j int) bool {
-		if items[i].Count != items[j].Count {
-			return items[i].Count > items[j].Count
+	slices.SortStableFunc(items, func(a, b PickerItem) int {
+		if a.Count != b.Count {
+			return cmp.Compare(b.Count, a.Count)
 		}
-		return items[i].Name < items[j].Name
+		return cmp.Compare(a.Name, b.Name)
 	})
 	if includeUntagged {
 		untagged := reg.UntaggedSlugs()

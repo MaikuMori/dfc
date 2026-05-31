@@ -1,9 +1,10 @@
 package cli
 
 import (
+	"cmp"
 	"fmt"
 	"os"
-	"sort"
+	"slices"
 	"text/tabwriter"
 
 	"github.com/MaikuMori/dfc/internal/project"
@@ -96,12 +97,11 @@ func (c *ProjectCmd) Run() error {
 }
 
 func sortSlugsByRecency(reg *project.Registry, slugs []string) {
-	sort.SliceStable(slugs, func(i, j int) bool {
-		ai := reg.LastUsed(slugs[i])
-		aj := reg.LastUsed(slugs[j])
-		if !ai.Equal(aj) {
-			return ai.After(aj)
+	slices.SortStableFunc(slugs, func(a, b string) int {
+		la, lb := reg.LastUsed(a), reg.LastUsed(b)
+		if !la.Equal(lb) {
+			return lb.Compare(la)
 		}
-		return slugs[i] < slugs[j]
+		return cmp.Compare(a, b)
 	})
 }

@@ -3,7 +3,7 @@ package cli
 import (
 	"fmt"
 	"os"
-	"sort"
+	"slices"
 	"strings"
 	"text/tabwriter"
 
@@ -244,7 +244,7 @@ func projectSlugsMatchingTags(reg *project.Registry, filter []string) []string {
 			out = append(out, slug)
 		}
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return out
 }
 

@@ -1,9 +1,10 @@
 package cli
 
 import (
+	"cmp"
 	"fmt"
 	"os"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/MaikuMori/dfc/internal/project"
@@ -129,12 +130,12 @@ func predictProjects(_ complete.Args) []string {
 		return nil
 	}
 	slugs := reg.Slugs()
-	sort.SliceStable(slugs, func(i, j int) bool {
-		li, lj := reg.LastUsed(slugs[i]), reg.LastUsed(slugs[j])
-		if li.Equal(lj) {
-			return slugs[i] < slugs[j]
+	slices.SortStableFunc(slugs, func(a, b string) int {
+		la, lb := reg.LastUsed(a), reg.LastUsed(b)
+		if la.Equal(lb) {
+			return cmp.Compare(a, b)
 		}
-		return li.After(lj)
+		return lb.Compare(la)
 	})
 	rich := richFormat()
 	out := make([]string, 0, len(slugs))

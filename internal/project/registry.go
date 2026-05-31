@@ -1,12 +1,13 @@
 package project
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -326,11 +327,11 @@ func (r *Registry) AllTags() []TagSummary {
 	}
 	out := make([]TagSummary, 0, len(groups))
 	for _, g := range groups {
-		sort.Strings(g.Slugs)
+		slices.Sort(g.Slugs)
 		out = append(out, *g)
 	}
-	sort.SliceStable(out, func(i, j int) bool {
-		return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name)
+	slices.SortStableFunc(out, func(a, b TagSummary) int {
+		return cmp.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
 	})
 	return out
 }
@@ -411,7 +412,7 @@ func (r *Registry) LookupSlug(input string) (string, error) {
 	case 1:
 		return matches[0], nil
 	default:
-		sort.Strings(matches)
+		slices.Sort(matches)
 		return "", fmt.Errorf("project name %q is ambiguous; matches slugs %s", input, strings.Join(matches, ", "))
 	}
 }
@@ -422,7 +423,7 @@ func (r *Registry) Slugs() []string {
 	for s := range r.entries {
 		out = append(out, s)
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return out
 }
 
