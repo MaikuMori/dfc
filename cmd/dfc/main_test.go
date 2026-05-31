@@ -43,6 +43,7 @@ func TestMirrorAliasesExposesEveryAlias(t *testing.T) {
 		"c":    "capture",
 		"list": "ls",
 		"s":    "search",
+		"move": "mv",
 	}
 	for alias, canonical := range want {
 		ac, ok := cmd.Sub[alias]

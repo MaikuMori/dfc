@@ -16,6 +16,7 @@ type CLI struct {
 	Reopen     ReopenCmd        `cmd:"" help:"Mark a task open again."`
 	Edit       EditCmd          `cmd:"" help:"Edit a task's description and/or details."`
 	Rm         RmCmd            `cmd:"" help:"Remove a task by full ULID."`
+	Mv         MvCmd            `cmd:"" aliases:"move" help:"Move a task to another project."`
 	Projects   ProjectsCmd      `cmd:"" help:"List every registered project."`
 	Project    ProjectCmd       `cmd:"" help:"Show the project resolved from the current directory."`
 	Tags       TagsCmd          `cmd:"" help:"Manage project categorical tags (show / add / rm / set / ls)."`
