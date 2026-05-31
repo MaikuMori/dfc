@@ -256,6 +256,10 @@ func (m Model) updateList(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.searchQuery = ""
 		return m.reloadActive(), nil
 
+	case msg.Code == tea.KeyEsc && m.globalView && len(m.tagFilter) > 0:
+		m.tagFilter = nil
+		return m.reloadActive(), nil
+
 	case key.Matches(msg, keys.Quit):
 		return m, tea.Quit
 

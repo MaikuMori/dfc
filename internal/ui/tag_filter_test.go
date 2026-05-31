@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
+
 	"github.com/MaikuMori/dfc/internal/core"
 	"github.com/MaikuMori/dfc/internal/storage"
 )
@@ -173,6 +175,21 @@ func TestRunSearch_GlobalViewRespectsTagFilter(t *testing.T) {
 	m = m.runSearch()
 	if len(m.tasks) != 0 {
 		t.Errorf("work filter should exclude gamma's 'task' hit, got %d", len(m.tasks))
+	}
+}
+
+func TestEscClearsTagFilter(t *testing.T) {
+	m := newTagModel(t)
+	m.tagFilter = []string{"work"}
+	m = m.reloadAll()
+
+	model, _ := m.updateList(tea.KeyPressMsg{Code: tea.KeyEscape})
+	got := model.(Model)
+	if len(got.tagFilter) != 0 {
+		t.Errorf("esc should clear the tag filter, got %v", got.tagFilter)
+	}
+	if len(got.tasks) != 3 {
+		t.Errorf("clearing the filter should restore all 3 tasks, got %d", len(got.tasks))
 	}
 }
 
