@@ -12,24 +12,37 @@ import (
 // task into the index. It is safe to call against an existing index —
 // upserts are idempotent — but the cheaper "fast path" is to call only
 // when Count() is 0 or after a wipe.
-func (i *Index) Bootstrap() error {
+func (i *Index) Bootstrap() error { return i.bootstrap(false) }
+
+// bootstrap indexes every task on disk in a single transaction. When wipe is
+// set it first deletes every existing row, so Reindex's wipe-and-rebuild is
+// atomic: a failure rolls back to the prior index rather than an empty one.
+func (i *Index) bootstrap(wipe bool) error {
 	root, err := storage.Root()
 	if err != nil {
 		return err
 	}
 	projectsDir := filepath.Join(root, "projects")
-	entries, err := os.ReadDir(projectsDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil // nothing to index yet
-		}
-		return err
-	}
+
 	tx, err := i.db.Begin()
 	if err != nil {
 		return fmt.Errorf("could not begin search index rebuild: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+
+	if wipe {
+		if _, err := tx.Exec(`DELETE FROM tasks_meta`); err != nil {
+			return fmt.Errorf("could not clear search index: %w", err)
+		}
+	}
+
+	entries, err := os.ReadDir(projectsDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return tx.Commit() // nothing to index; a requested clear still lands
+		}
+		return err
+	}
 
 	upsert, err := tx.Prepare(upsertSQL)
 	if err != nil {
@@ -62,14 +75,9 @@ func (i *Index) Bootstrap() error {
 }
 
 // Reindex drops the entire tasks_meta table (FTS5 follows via trigger)
-// and re-bootstraps from disk. Use this as the nuclear option when the
-// index goes wrong in a way Bootstrap can't fix idempotently.
-func (i *Index) Reindex() error {
-	if _, err := i.db.Exec(`DELETE FROM tasks_meta`); err != nil {
-		return fmt.Errorf("could not clear search index: %w", err)
-	}
-	return i.Bootstrap()
-}
+// and re-bootstraps from disk in one transaction. Use this as the nuclear
+// option when the index goes wrong in a way Bootstrap can't fix idempotently.
+func (i *Index) Reindex() error { return i.bootstrap(true) }
 
 // SyncStaleSince re-indexes any task whose file mtime is newer than the
 // given cutoff. Cheap drift-recovery to run at the start of a query
