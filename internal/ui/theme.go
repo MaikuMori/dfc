@@ -43,10 +43,13 @@ var (
 	styleCursor     = lipgloss.NewStyle().Background(colorCursorBg).Foreground(colorFg).Bold(true)
 	styleDoneCursor = lipgloss.NewStyle().Background(colorCursorBg).Foreground(colorMuted).Italic(true)
 	styleHint       = lipgloss.NewStyle().Foreground(colorMuted)
-	stylePrompt     = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
-	styleEmpty      = lipgloss.NewStyle().Foreground(colorMuted).Italic(true)
-	styleError      = lipgloss.NewStyle().Foreground(colorError)
-	styleHeader     = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
+	// styleCheckDone mutes a completed checkbox line in the expanded markdown
+	// view so done sub-tasks recede beneath the outstanding ones.
+	styleCheckDone = lipgloss.NewStyle().Foreground(colorMuted)
+	stylePrompt    = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
+	styleEmpty     = lipgloss.NewStyle().Foreground(colorMuted).Italic(true)
+	styleError     = lipgloss.NewStyle().Foreground(colorError)
+	styleHeader    = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
 	// noStyle is the explicit "no attributes" lipgloss style used to neutralize
 	// chrome we inherit from third-party bubbles (textarea cursor-line bg,
 	// end-of-buffer foreground, etc.).

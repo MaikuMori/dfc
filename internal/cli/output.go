@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"time"
 
@@ -89,6 +90,17 @@ func statusGlyph(s storage.Status) string {
 		return "✓"
 	}
 	return "○"
+}
+
+// progressSuffix returns a " [done/total]" checkbox-progress badge for the
+// task, or "" when it carries no task-list items. Used to annotate the human
+// `ls` rows; JSON consumers compute their own from `details`.
+func progressSuffix(t storage.Task) string {
+	done, total := storage.Checkboxes(t.Details)
+	if total == 0 {
+		return ""
+	}
+	return fmt.Sprintf(" [%d/%d]", done, total)
 }
 
 // shortID returns the 10-character timestamp prefix of a ULID — long

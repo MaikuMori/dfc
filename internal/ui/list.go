@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -10,6 +11,16 @@ import (
 
 	"github.com/MaikuMori/dfc/internal/storage"
 )
+
+// progressBadge returns a "[done/total]" checkbox-progress badge for the task,
+// or "" when it carries no task-list items.
+func progressBadge(t storage.Task) string {
+	done, total := storage.Checkboxes(t.Details)
+	if total == 0 {
+		return ""
+	}
+	return fmt.Sprintf("[%d/%d]", done, total)
+}
 
 // glamour rendering for the expanded task is by far the most expensive
 // per-frame work on `j`/`k` through a long body. Only one task is expanded
@@ -142,13 +153,31 @@ func renderRow(t storage.Task, prefix string, cursor bool, width int, flatDone b
 	const iconWidth = 2 // "○ " or "✓ "
 	prefixWidth := runewidth.StringWidth(prefix)
 	indent := strings.Repeat(" ", iconWidth+prefixWidth)
-	wrapWidth := width - iconWidth - prefixWidth
-	if wrapWidth < 1 {
-		wrapWidth = 1
-	}
 
 	hasDetails := strings.TrimSpace(t.Details) != ""
 	done := t.Status == storage.StatusDone
+
+	// The trailing hint after the description: a checkbox-progress badge when
+	// the task has sub-tasks, otherwise the "…" dot when it has any details.
+	// The badge supersedes the dot — a task with sub-tasks always has details,
+	// and the count is the more useful at-a-glance signal.
+	trailer := progressBadge(t)
+	if trailer == "" && hasDetails {
+		trailer = iconHasDetails
+	}
+
+	// Reserve room for the trailer (" " + trailer) so the description wraps
+	// before it, never past it. Otherwise a full-width title plus the appended
+	// trailer overflows into a terminal-wrapped extra row that the height
+	// accounting below doesn't count, drifting the viewport.
+	trailerWidth := 0
+	if trailer != "" {
+		trailerWidth = 1 + runewidth.StringWidth(trailer)
+	}
+	wrapWidth := width - iconWidth - prefixWidth - trailerWidth
+	if wrapWidth < 1 {
+		wrapWidth = 1
+	}
 
 	wrapped := wordwrap.String(t.Description, wrapWidth)
 	lines := strings.Split(wrapped, "\n")
@@ -172,8 +201,8 @@ func renderRow(t storage.Task, prefix string, cursor bool, width int, flatDone b
 			rest[i] = styleOpen.Render(indent + lines[i])
 		}
 		rendered := strings.Join(rest, "\n")
-		if hasDetails {
-			rendered += " " + styleHint.Render(iconHasDetails)
+		if trailer != "" {
+			rendered += " " + styleHint.Render(trailer)
 		}
 		return rendered
 	}
@@ -186,8 +215,8 @@ func renderRow(t storage.Task, prefix string, cursor bool, width int, flatDone b
 			lines[i] = indent + line
 		}
 	}
-	if hasDetails && cursor {
-		lines[len(lines)-1] += " " + iconHasDetails
+	if trailer != "" && cursor {
+		lines[len(lines)-1] += " " + trailer
 	}
 	text := strings.Join(lines, "\n")
 
@@ -203,8 +232,8 @@ func renderRow(t storage.Task, prefix string, cursor bool, width int, flatDone b
 		rendered = styleOpen.Render(text)
 	}
 
-	if hasDetails && !cursor {
-		rendered += " " + styleHint.Render(iconHasDetails)
+	if trailer != "" && !cursor {
+		rendered += " " + styleHint.Render(trailer)
 	}
 	return rendered
 }
@@ -220,7 +249,13 @@ func renderTaskMarkdown(t storage.Task, prefix string, width int) string {
 	const iconWidth = 2 // "○ " or "✓ "
 	prefixWidth := runewidth.StringWidth(prefix)
 
+	// The badge rides on the first rendered line; reserve its width so glamour
+	// wraps the heading before it and the line never overflows the terminal.
+	badge := progressBadge(t)
 	mdWidth := width - iconWidth - prefixWidth
+	if badge != "" {
+		mdWidth -= 1 + runewidth.StringWidth(badge)
+	}
 	// Below the markdown renderer's minimum useful width the expanded
 	// view would overflow the terminal; fall back to the collapsed row
 	// so a tiny screen stays legible.
@@ -241,11 +276,15 @@ func renderTaskMarkdown(t storage.Task, prefix string, width int) string {
 	firstSet := false
 	for i, line := range lines {
 		if !firstSet && strings.TrimSpace(line) != "" {
+			head := icon + " "
 			if prefix != "" {
-				lines[i] = icon + " " + styleHint.Render(prefix) + line
-			} else {
-				lines[i] = icon + " " + line
+				head += styleHint.Render(prefix)
 			}
+			line = head + line
+			if badge != "" {
+				line += " " + styleHint.Render(badge)
+			}
+			lines[i] = line
 			firstSet = true
 			continue
 		}
@@ -273,6 +312,7 @@ func cachedMarkdown(t storage.Task, width int) string {
 	out := renderMarkdown(src, width)
 	if out != "" {
 		out = stripCommonLeadingSpaces(out)
+		out = dimDoneTasks(out, storage.CheckedItems(t.Details))
 	}
 	markdownCache.id = t.ID
 	markdownCache.modified = t.Modified

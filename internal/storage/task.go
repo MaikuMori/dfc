@@ -9,6 +9,8 @@ import (
 
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
+	"github.com/yuin/goldmark/extension"
+	extast "github.com/yuin/goldmark/extension/ast"
 	"github.com/yuin/goldmark/parser"
 	"github.com/yuin/goldmark/text"
 	"gopkg.in/yaml.v3"
@@ -17,6 +19,69 @@ import (
 // mdParser is shared by every splitBody call. goldmark's parser is safe for
 // concurrent reuse and Parse-only work is allocation-light.
 var mdParser parser.Parser = goldmark.New().Parser()
+
+// taskListParser recognizes GFM task-list items (`- [ ]` / `- [x]`). It is
+// separate from mdParser so enabling the GFM extension can't shift the
+// heading/body parse that mdParser drives.
+var taskListParser parser.Parser = goldmark.New(goldmark.WithExtensions(extension.TaskList)).Parser()
+
+// Checkboxes counts GFM task-list items in a markdown body, returning how many
+// are checked and the total present. A body with no task list returns (0, 0).
+// The substring guard skips the parse for the common case of a body that
+// carries no checkbox at all, keeping large `ls` runs cheap.
+func Checkboxes(body string) (done, total int) {
+	if !strings.Contains(body, "[ ]") &&
+		!strings.Contains(body, "[x]") &&
+		!strings.Contains(body, "[X]") {
+		return 0, 0
+	}
+	doc := taskListParser.Parse(text.NewReader([]byte(body)))
+	_ = ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+		if !entering {
+			return ast.WalkContinue, nil
+		}
+		if cb, ok := n.(*extast.TaskCheckBox); ok {
+			total++
+			if cb.IsChecked {
+				done++
+			}
+		}
+		return ast.WalkContinue, nil
+	})
+	return done, total
+}
+
+// CheckedItems returns the text of each checked GFM task-list item in a
+// markdown body, whitespace-collapsed, in document order. The expanded TUI
+// view uses these to identify which rendered lines belong to a completed
+// sub-task — so it can dim a whole item (including wrapped continuation lines)
+// without misclassifying prose or a heading that merely starts with a check
+// glyph.
+func CheckedItems(body string) []string {
+	if !strings.Contains(body, "[x]") && !strings.Contains(body, "[X]") {
+		return nil
+	}
+	src := []byte(body)
+	doc := taskListParser.Parse(text.NewReader(src))
+	var items []string
+	_ = ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+		if !entering {
+			return ast.WalkContinue, nil
+		}
+		// The checkbox is the first inline of the item's text block; its parent
+		// holds the item's own text (inlineText ignores the checkbox node and
+		// any nested sub-list, which is a sibling block).
+		if cb, ok := n.(*extast.TaskCheckBox); ok && cb.IsChecked {
+			if p := cb.Parent(); p != nil {
+				if txt := strings.Join(strings.Fields(inlineText(src, p)), " "); txt != "" {
+					items = append(items, txt)
+				}
+			}
+		}
+		return ast.WalkContinue, nil
+	})
+	return items
+}
 
 type Status string
 

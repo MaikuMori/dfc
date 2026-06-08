@@ -130,6 +130,49 @@ func TestUnmarshalSkipsHashInsideCodeFence(t *testing.T) {
 	}
 }
 
+func TestCheckboxes(t *testing.T) {
+	cases := []struct {
+		name                string
+		body                string
+		wantDone, wantTotal int
+	}{
+		{"none", "just a plain body\nwith no boxes", 0, 0},
+		{"all open", "- [ ] one\n- [ ] two\n- [ ] three", 0, 3},
+		{"mixed", "- [ ] one\n- [x] two\n- [ ] three", 1, 3},
+		{"all done", "- [x] one\n- [X] two", 2, 2},
+		{"uppercase X", "- [X] done", 1, 1},
+		{"nested", "- [x] parent\n    - [ ] child\n    - [x] child two", 2, 3},
+		{"star and plus markers", "* [ ] star\n+ [x] plus", 1, 2},
+		{"ordered list", "1. [ ] first\n2. [x] second", 1, 2},
+		{"inside code fence", "```\n- [ ] not a real task\n- [x] also not\n```\n\n- [x] real", 1, 1},
+		{"bracket not a list item", "see issue [ ] tracker and [x] mark", 0, 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			done, total := Checkboxes(tc.body)
+			if done != tc.wantDone || total != tc.wantTotal {
+				t.Errorf("Checkboxes() = (%d, %d), want (%d, %d)", done, total, tc.wantDone, tc.wantTotal)
+			}
+		})
+	}
+}
+
+func TestCheckedItems(t *testing.T) {
+	got := CheckedItems("- [x] write   migration\n- [ ] open one\n- [x] **bold** item\n    - [x] nested done")
+	want := []string{"write migration", "bold item", "nested done"}
+	if len(got) != len(want) {
+		t.Fatalf("CheckedItems() = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("CheckedItems()[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+	if CheckedItems("- [ ] all open\nplain prose") != nil {
+		t.Error("expected nil for a body with no checked items")
+	}
+}
+
 func TestUnmarshalSetextHeading(t *testing.T) {
 	raw := []byte("---\nid: x\nstatus: open\ncreated: 2026-05-13T00:00:00Z\n---\n\nReal heading\n============\n\ndetails\n")
 	out, err := Unmarshal(raw)

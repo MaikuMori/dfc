@@ -121,7 +121,7 @@ func (c *LsCmd) Run() error {
 
 	w := os.Stdout
 	for _, t := range tasks {
-		if _, err := fmt.Fprintf(w, "%s  %s  %s%s\n", t.ID, statusGlyph(t.Status), projectPrefix(reg, t, c.All), t.Description); err != nil {
+		if _, err := fmt.Fprintf(w, "%s  %s  %s%s%s\n", t.ID, statusGlyph(t.Status), projectPrefix(reg, t, c.All), t.Description, progressSuffix(t)); err != nil {
 			return err
 		}
 	}

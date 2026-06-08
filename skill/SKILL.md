@@ -18,6 +18,16 @@ Use it when the user asks to:
 
 Every command except the interactive TUI (`dfc`) emits human text by default and structured JSON with `--json`. **Always pass `--json` when parsing programmatically** — the human format may change without notice.
 
+## Subtask checklists
+
+When a task breaks into trackable steps, write them in the task file's **details** as a GFM task list — `- [ ]` for a step still to do, `- [x]` for a done one. **Prefer this over prose whenever a task is really a checklist of steps.** dfc counts the boxes and shows a `[done/total]` badge after the title (in the TUI list and `dfc ls`) and dims completed items in the expanded view, so the human sees progress at a glance.
+
+```
+printf 'Ship the migration\n\n- [ ] write migration\n- [ ] test on staging\n- [ ] backfill\n' | dfc c -
+```
+
+**Keep the checklist current as you work.** The task file is the source of truth — as you finish each subtask, mark it `- [x]` in the file so the badge advances; don't batch the updates to the end. Edit the file **in place** rather than rewriting the whole body (which would clobber the other lines): get its path with `dfc show <id> --json | jq -r .path`, then flip that one line's `- [ ]` to `- [x]`. The mtime sort / watcher picks the change up automatically. Markers may be `-`, `*`, `+`, or `1.`; `[X]` also counts as done. Items inside fenced code blocks are ignored.
+
 ## Commands
 
 All flags below are exhaustive. Aliases shown in parens.
@@ -53,7 +63,7 @@ dfc ls [-p <slug-or-name> | -a] [--tag <name>]... [--status open|done|all]
 - `--sort`: `modified` (default — file mtime) or `created` (frontmatter timestamp). Newest-first.
 - `--json`: NDJSON, one `TaskOut` per line.
 
-Human format: `<26-char ULID>  <○|✓>  [<prefix>] <description>` (prefix only in `-a` mode).
+Human format: `<26-char ULID>  <○|✓>  [<prefix>] <description> [<done>/<total>]` (prefix only in `-a` mode; the `[done/total]` badge appears only when the task has a `- [ ]` checklist — see [Subtask checklists](#subtask-checklists)).
 
 ### `dfc s` / `dfc search` — full-text search (cwd-local by default)
 
