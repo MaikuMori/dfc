@@ -119,6 +119,7 @@ func TestSplitMatchesContentGrammar(t *testing.T) {
 		{"#a -b#", "", []string{"a -b"}, nil},             // '-' is a tag character in a multi-word run
 		{"#a b#c", "b#c", []string{"a"}, nil},             // run closing mid-token falls back to the bare tag
 		{"#two   words#", "", []string{"two words"}, nil}, // tokenizing collapses inner runs of spaces
+		{"#thread- work", "#thread- work", nil, nil},      // trailing-separator token stays text in a query
 	}
 	for _, c := range cases {
 		got := Split(c.q)

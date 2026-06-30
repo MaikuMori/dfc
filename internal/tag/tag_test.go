@@ -27,6 +27,11 @@ func TestFromMarkdown(t *testing.T) {
 		{"case-insensitive unique", "#Work and #work", []string{"Work"}},
 		{"inside code span skipped", "use `#nope` but tag #yes", []string{"yes"}},
 		{"start of text", "#first thing", []string{"first"}},
+		{"trailing hyphen trimmed", "see #thread- now", []string{"thread"}},
+		{"trailing underscore trimmed", "ping #later_ then", []string{"later"}},
+		{"trailing slash trimmed", "ref #a/b/ end", []string{"a/b"}},
+		{"internal separators kept", "do #a/b-c_d now", []string{"a/b-c_d"}},
+		{"multiple trailing separators trimmed", "x #goal--/ y", []string{"goal"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -66,6 +71,20 @@ func TestSpans(t *testing.T) {
 func TestSpansEscapeAndAdjacency(t *testing.T) {
 	if got := Spans(`a \#escaped and word#joined`); got != nil {
 		t.Errorf("Spans found tags in escaped/adjacent input: %#v", got)
+	}
+}
+
+// A hash anchor in prose paints only the tag, not the trailing separator and
+// the text glued after it.
+func TestSpansTrimsTrailingSeparator(t *testing.T) {
+	s := "deep link #thread-<id> now"
+	got := Spans(s)
+	want := []Span{{Name: "thread", Start: 10, End: 17}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("Spans() = %#v, want %#v", got, want)
+	}
+	if s[got[0].Start:got[0].End] != "#thread" {
+		t.Errorf("painted span = %q, want %q", s[got[0].Start:got[0].End], "#thread")
 	}
 }
 

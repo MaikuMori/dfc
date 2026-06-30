@@ -54,7 +54,9 @@ func hasLetter(s string) bool {
 //	#a/b c d#        nested + multi-word
 //
 // A tag must contain at least one letter, so #3 and #2026 are not tags, which
-// keeps version/issue numbers from becoming tags.
+// keeps version/issue numbers from becoming tags. Trailing separators are
+// dropped from the name (and, for the unclosed bare form, from the consumed
+// span) so a hash anchor like #thread-<id> yields "thread", not "thread-".
 func Match(line []byte) (name string, n int, ok bool) {
 	if len(line) < 2 || line[0] != '#' {
 		return "", 0, false
@@ -80,15 +82,27 @@ func Match(line []byte) (name string, n int, ok bool) {
 		return "", 0, false
 	}
 
-	name = string(line[1:bareEnd])
-	n = bareEnd
-	if bareEnd < len(line) && line[bareEnd] == '#' {
-		n = bareEnd + 1 // a trailing '#' closes a spaceless "#foo#" tag
-	}
+	name = trimTagEnd(string(line[1:bareEnd]))
 	if !hasLetter(name) {
 		return "", 0, false
 	}
-	return name, n, true
+	if bareEnd < len(line) && line[bareEnd] == '#' {
+		// A trailing '#' closes a spaceless "#foo#" tag: the close is explicit,
+		// so it is consumed even when a trimmed separator precedes it.
+		return name, bareEnd + 1, true
+	}
+	// Unclosed bare run: the consumed span is exactly '#' + the trimmed name,
+	// so the painter and parser don't swallow trailing separators. name is a
+	// byte-prefix of the run, so its byte length gives the span directly.
+	return name, 1 + len(name), true
+}
+
+// trimTagEnd strips trailing separators (and any space they expose) from a
+// resolved tag name. A separator never carries meaning at the end of a tag; a
+// trailing one is usually punctuation that bled in from surrounding prose
+// (#thread-<id>, #a/b/).
+func trimTagEnd(s string) string {
+	return strings.TrimRight(s, "-_/ ")
 }
 
 // matchMultiword decodes a "#words with spaces#" tag. The closing '#' must sit
@@ -112,7 +126,7 @@ func matchMultiword(line []byte) (name string, n int, ok bool) {
 					return "", 0, false
 				}
 			}
-			cs := string(content)
+			cs := trimTagEnd(string(content))
 			if !hasLetter(cs) {
 				return "", 0, false
 			}
