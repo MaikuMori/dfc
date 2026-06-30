@@ -264,12 +264,17 @@ func hasAlnum(s string) bool {
 	return false
 }
 
+// isSafeBareTerm reports whether s may appear unquoted in an FTS5 MATCH
+// expression. Only letters, digits, and `_` qualify: FTS5's query grammar
+// reads an unquoted `-` as a column-filter separator (so a bare `oauth2-proxy`
+// is parsed as the term `oauth2` filtered to a column named `proxy`, which
+// errors with "no such column"), and other punctuation breaks the grammar too.
+// Such terms must be phrase-quoted instead.
 func isSafeBareTerm(s string) bool {
 	for _, r := range s {
 		switch {
 		case unicode.IsLetter(r), unicode.IsDigit(r):
-		case r == '_' || r == '-':
-			// allow _ for identifiers and - for in-word hyphens.
+		case r == '_':
 		default:
 			return false
 		}
