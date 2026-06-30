@@ -1,3 +1,0 @@
-kind: added
-body: Tasks with `- [ ]` checklists show a `[done/total]` progress badge after the title; the expanded view dims completed items.
-time: 2026-06-07T19:40:26.89327-04:00

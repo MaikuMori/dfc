@@ -1,3 +1,0 @@
-kind: added
-body: 'Manage saved searches in the TUI: `^s` in the filter saves the current query under a name; the `S` picker renames (`^r`) and deletes (`^⇧d`) them.'
-time: 2026-06-08T00:12:47.816109-04:00

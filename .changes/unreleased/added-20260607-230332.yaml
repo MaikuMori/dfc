@@ -1,3 +1,0 @@
-kind: added
-body: 'Inline #tags render as colored pills: collected after the task title in the list (up to 3, then `+N`) and inline in the expanded view. Forms: `#tag`, `#multi word#`, nested `#a/b`, with `\#` to escape.'
-time: 2026-06-07T23:03:32.672587-04:00

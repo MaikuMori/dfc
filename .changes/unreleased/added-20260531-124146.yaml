@@ -1,3 +1,0 @@
-kind: added
-body: 'CLI: `dfc tags rename <old> <new>` renames a tag across every project (with --merge for conflicts).'
-time: 2026-05-31T12:41:46.466483-04:00
