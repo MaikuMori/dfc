@@ -72,7 +72,7 @@ func TestDimDoneTasksMutesOnlyRealCompletedItems(t *testing.T) {
 
 func TestRenderRowBadgeSupersedesDetailsDot(t *testing.T) {
 	task := storage.Task{Description: "Ship it", Details: "- [x] a\n- [ ] b", Status: storage.StatusOpen}
-	row := renderRow(task, "", false, 40, false)
+	row := renderRow(task, "", false, 40, nil)
 	if !strings.Contains(row, "[1/2]") {
 		t.Errorf("row missing progress badge: %q", row)
 	}
@@ -83,7 +83,7 @@ func TestRenderRowBadgeSupersedesDetailsDot(t *testing.T) {
 
 func TestRenderRowKeepsDetailsDotWithoutCheckboxes(t *testing.T) {
 	task := storage.Task{Description: "Note", Details: "some prose", Status: storage.StatusOpen}
-	row := renderRow(task, "", false, 40, false)
+	row := renderRow(task, "", false, 40, nil)
 	if !strings.Contains(row, iconHasDetails) {
 		t.Errorf("row missing details dot: %q", row)
 	}

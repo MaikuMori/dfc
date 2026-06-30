@@ -4,8 +4,8 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/MaikuMori/dfc/internal/index"
-	"github.com/MaikuMori/dfc/internal/project"
+	"github.com/MaikuMori/dfc/internal/core"
+	"github.com/MaikuMori/dfc/internal/query"
 	"github.com/MaikuMori/dfc/internal/storage"
 )
 
@@ -42,16 +42,11 @@ func (m Model) reloadActive() Model {
 	return m.reload()
 }
 
-// runSearch queries the FTS5 index with the active query string and
-// replaces m.tasks with the ranked hits. Scope follows the current
-// view: per-project view filters to m.slug; global view searches every
-// project. If the index isn't open we fall back to a case-insensitive
-// substring match over the in-memory list so the filter still does
-// something useful.
-//
-// The list is reversed before display so the best-scored hit lands at
-// the bottom of the viewport, closest to the input — matching the
-// rest of the TUI's bottom-up reading direction.
+// runSearch applies the active query via the shared core.Query executor and
+// replaces m.tasks. Scope follows the current view: per-project filters to
+// m.slug, global searches every project. A text query comes back BM25-ranked
+// and is reversed so the best hit sits at the bottom next to the input; a
+// tags-only result is shown like the normal list (done-first, bottom-up).
 func (m Model) runSearch() Model {
 	if strings.TrimSpace(m.searchQuery) == "" {
 		// No live query — bypass the search path and reload normally.
@@ -60,67 +55,34 @@ func (m Model) runSearch() Model {
 		}
 		return m.reload()
 	}
-	if !m.core.HasIndex() {
-		return m.runSearchFallback()
-	}
+
 	scope := ""
 	if !m.globalView {
 		scope = m.slug
 	}
-	opts := index.SearchOpts{
+	res, err := m.core.Query(m.searchQuery, core.QueryOpts{
 		Project: scope,
 		Status:  "all",
-		Limit:   200,
 		SortBy:  "score",
-	}
-	if m.globalView && len(m.tagFilter) > 0 {
-		reg := m.core.Registry()
-		tf := newTagFilterSet(m.tagFilter)
-		slugs := []string{}
-		for _, slug := range reg.Slugs() {
-			if tf.matches(reg, slug) {
-				slugs = append(slugs, slug)
-			}
-		}
-		opts.Projects = slugs
-	}
-	hits, err := m.core.Search(m.searchQuery, opts)
+		// 0 = no cap: the TUI list is scrollable, so show every match.
+	})
 	if err != nil {
 		m.err = err
 		return m
 	}
-	tasks := make([]storage.Task, len(hits))
-	for i, h := range hits {
-		tasks[len(hits)-1-i] = h.Task
+	tasks := make([]storage.Task, len(res.Hits))
+	for i, h := range res.Hits {
+		tasks[i] = h.Task
 	}
-	return m.applySearchResults(tasks)
-}
-
-// runSearchFallback is the no-index path: walk m.tasks (whatever the
-// last reload populated) and keep rows whose description or details
-// contains any positive term, case-insensitive. Hits are ordered by
-// their original mtime position (still bottom-up: newest at bottom).
-func (m Model) runSearchFallback() Model {
-	q := strings.ToLower(strings.TrimSpace(m.searchQuery))
-	if q == "" {
-		return m
-	}
-	base := m.searchBase
-	if base == nil {
-		if m.globalView {
-			base = m.reloadAll().tasks
-		} else {
-			base = m.reload().tasks
+	if res.Ranked {
+		// FTS score order: reverse so the best-scored hit lands at the bottom.
+		for l, r := 0, len(tasks)-1; l < r; l, r = l+1, r-1 {
+			tasks[l], tasks[r] = tasks[r], tasks[l]
 		}
+		return m.applySearchResults(tasks)
 	}
-	var filtered []storage.Task
-	for _, t := range base {
-		if strings.Contains(strings.ToLower(t.Description), q) ||
-			strings.Contains(strings.ToLower(t.Details), q) {
-			filtered = append(filtered, t)
-		}
-	}
-	return m.applySearchResults(filtered)
+	// Tags-only / listed: render like the normal list.
+	return m.applyTaskListPreservingCursor(tasks)
 }
 
 // applySearchResults commits a filtered task list to the model. Unlike
@@ -161,65 +123,45 @@ func (m Model) reload() Model {
 	return m.applyTaskListPreservingCursor(tasks)
 }
 
+// explainQuery turns a filter query into a short plain-English description —
+// e.g. `tagged #p3, not #later, matching "mig"` — so the footer can give live
+// feedback that the query parsed. Empty when the query has no recognizable
+// predicates, letting the caller fall back to a syntax hint.
+func explainQuery(q string) string {
+	tq := query.Split(q)
+	var parts []string
+	if len(tq.Include) > 0 {
+		parts = append(parts, "tagged "+hashJoin(tq.Include))
+	}
+	if len(tq.Exclude) > 0 {
+		parts = append(parts, "not "+hashJoin(tq.Exclude))
+	}
+	if terms := query.PositiveTerms(tq.Text); len(terms) > 0 {
+		quoted := make([]string, len(terms))
+		for i, t := range terms {
+			quoted[i] = `"` + t + `"`
+		}
+		parts = append(parts, "matching "+strings.Join(quoted, " "))
+	}
+	return strings.Join(parts, ", ")
+}
+
+func hashJoin(tags []string) string {
+	out := make([]string, len(tags))
+	for i, t := range tags {
+		out[i] = "#" + t
+	}
+	return strings.Join(out, " ")
+}
+
 // reloadAll lists every known project and merges into one sorted slice.
-// Per-project errors are non-fatal (best-effort). When m.tagFilter is
-// non-empty, only tasks belonging to matching projects survive.
+// Per-project errors are non-fatal (best-effort).
 func (m Model) reloadAll() Model {
 	all, err := m.core.ListAll()
 	if err != nil {
 		m.err = err
 	}
-	if len(m.tagFilter) > 0 {
-		reg := m.core.Registry()
-		tf := newTagFilterSet(m.tagFilter)
-		out := all[:0]
-		for _, t := range all {
-			if tf.matches(reg, t.ProjectSlug) {
-				out = append(out, t)
-			}
-		}
-		all = out
-	}
 	return m.applyTaskListPreservingCursor(all)
-}
-
-// tagFilterSet is a parsed categorical-tag filter. Building it once and
-// reusing it across every task avoids re-splitting the filter and copying
-// each project's tag list on every comparison.
-type tagFilterSet struct {
-	want     []string
-	untagged bool
-}
-
-func newTagFilterSet(filter []string) tagFilterSet {
-	var tf tagFilterSet
-	for _, f := range filter {
-		if strings.EqualFold(f, "(untagged)") {
-			tf.untagged = true
-			continue
-		}
-		tf.want = append(tf.want, f)
-	}
-	return tf
-}
-
-// matches reports whether slug survives the filter. The OR + (untagged)
-// semantics mirror the CLI's matchesTagFilter; an empty filter matches all.
-func (tf tagFilterSet) matches(reg *project.Registry, slug string) bool {
-	if len(tf.want) == 0 && !tf.untagged {
-		return true
-	}
-	if tf.untagged && reg.IsUntagged(slug) {
-		return true
-	}
-	return reg.HasAnyTag(slug, tf.want)
-}
-
-// tagFilterMatches mirrors matchesTagFilter from internal/cli but lives
-// here so the ui package doesn't need to import internal/cli (which
-// would be a layer violation).
-func tagFilterMatches(reg *project.Registry, slug string, filter []string) bool {
-	return newTagFilterSet(filter).matches(reg, slug)
 }
 
 // applyTaskListPreservingCursor commits a new task list to the model,

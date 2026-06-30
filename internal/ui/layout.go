@@ -239,7 +239,7 @@ func (m *Model) relayout() {
 		if w := m.width - 2; w > 0 {
 			m.input.SetWidth(w)
 		}
-	case modeSwitch, modeCaptureTarget, modeMoveTarget, modeTagEdit, modeTagFilter, modeHelp:
+	case modeSwitch, modeCaptureTarget, modeMoveTarget, modeTagEdit, modeHelp:
 		// Picker or help takes over the body; viewport doesn't need to be
 		// sized to anything sensible.
 		listHeight = 0
@@ -264,7 +264,7 @@ func (m *Model) relayout() {
 // screen. modeHelp also takes over the body but has no picker to size.
 func (m Model) isPickerMode() bool {
 	switch m.mode {
-	case modeSwitch, modeCaptureTarget, modeMoveTarget, modeTagEdit, modeTagFilter:
+	case modeSwitch, modeCaptureTarget, modeMoveTarget, modeTagEdit:
 		return true
 	}
 	return false

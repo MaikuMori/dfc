@@ -37,7 +37,6 @@ type keyMap struct {
 	SearchClear      key.Binding
 	Switch           key.Binding
 	Sort             key.Binding
-	Filter           key.Binding
 	PickerEditTags   key.Binding
 	PickerToggleTag  key.Binding
 	PickerNewTag     key.Binding
@@ -72,13 +71,12 @@ var keys = keyMap{
 	Yank:             key.NewBinding(key.WithKeys("y"), key.WithHelp("y", "yank id")),
 	YankPath:         key.NewBinding(key.WithKeys("Y"), key.WithHelp("Y", "yank path")),
 
-	Search:       key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "search")),
+	Search:       key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter (text · #tag · -#tag)")),
 	SearchCommit: key.NewBinding(key.WithKeys("enter"), key.WithHelp("↵", "apply")),
 	SearchClear:  key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "clear")),
 
 	Switch:          key.NewBinding(key.WithKeys("P"), key.WithHelp("P", "switch")),
 	Sort:            key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "sort: modified/created")),
-	Filter:          key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "filter by tag")),
 	PickerEditTags:  key.NewBinding(key.WithKeys("ctrl+t"), key.WithHelp("^t", "edit tags")),
 	PickerToggleTag: key.NewBinding(key.WithKeys(" "), key.WithHelp("␣", "toggle")),
 	PickerNewTag:    key.NewBinding(key.WithKeys("ctrl+n"), key.WithHelp("^n", "new tag")),
@@ -97,7 +95,7 @@ var keys = keyMap{
 // ShortHelp drives the always-visible footer hint. Keep it to the keys a
 // user reaches for several times a minute.
 func (k keyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Capture, k.Search, k.Toggle, k.Global, k.Filter, k.Help, k.Quit}
+	return []key.Binding{k.Capture, k.Search, k.Toggle, k.Global, k.Help, k.Quit}
 }
 
 // FullHelp drives the `?` overlay. Rows group related actions; columns
@@ -107,7 +105,7 @@ func (k keyMap) FullHelp() [][]key.Binding {
 		{k.Up, k.Down, k.PageUp, k.PageDn, k.Top, k.Bottom, k.Expand},
 		{k.Capture, k.NewlineInCapture, k.Edit, k.EditExt, k.Move, k.Toggle, k.Delete, k.Undo, k.Yank, k.YankPath},
 		{k.Search, k.SearchCommit, k.SearchClear},
-		{k.Switch, k.PickerRename, k.PickerSetPrefix, k.PickerDelete, k.Global, k.Sort, k.Filter},
+		{k.Switch, k.PickerRename, k.PickerSetPrefix, k.PickerDelete, k.Global, k.Sort},
 		{k.Help, k.Quit},
 	}
 }
@@ -146,10 +144,6 @@ func (k keyMap) MoveTargetHints() []key.Binding {
 
 func (k keyMap) TagEditHints() []key.Binding {
 	return []key.Binding{k.PickerToggleTag, k.PickerNewTag, k.PickerClearTags, k.Confirm, k.Cancel}
-}
-
-func (k keyMap) TagFilterHints() []key.Binding {
-	return []key.Binding{k.PickerToggleTag, k.PickerClearTags, k.Confirm, k.Cancel}
 }
 
 // joinBindings renders the given bindings as a one-line "k  desc · k desc"

@@ -26,23 +26,24 @@ var (
 	colorAccent   = ld(lipgloss.Color("#0066cc"), lipgloss.Color("#7aa2f7"))
 	colorCursorBg = ld(lipgloss.Color("#e5e5e5"), lipgloss.Color("#2a2a2a"))
 	colorError    = ld(lipgloss.Color("#cc3333"), lipgloss.Color("#f7768e"))
-	// Done checkmark gets a tasteful green so a glance picks "this is done"
-	// out of a long list without the heavy hit of strikethrough on every line.
-	colorDone = ld(lipgloss.Color("#3a8a4e"), lipgloss.Color("#74c98a"))
+	// Inline #tags render as a colored pill: a tinted background with a
+	// high-contrast foreground so they pop out of the description text.
+	colorTagBg = ld(lipgloss.Color("#dbe6fb"), lipgloss.Color("#3a4a6b"))
+	colorTagFg = ld(lipgloss.Color("#1f4486"), lipgloss.Color("#cdd9f5"))
 )
 
 var (
 	styleOpen = lipgloss.NewStyle().Foreground(colorFg)
-	// Done description: italic + muted, no strikethrough. The check mark
-	// glyph carries the "done" signal; the italic + dim gives a calm visual
-	// recede without making the words illegible.
-	styleDone = lipgloss.NewStyle().Foreground(colorMuted).Italic(true)
-	// styleDoneIcon paints the leading ✓ green so the eye sees state at a
-	// glance even when text style is muted.
-	styleDoneIcon   = lipgloss.NewStyle().Foreground(colorDone).Bold(true)
+	// Done description: italic + muted, no strikethrough. The ✓ glyph carries
+	// the "done" signal; the italic + dim gives a calm visual recede without
+	// making the words illegible.
+	styleDone       = lipgloss.NewStyle().Foreground(colorMuted).Italic(true)
 	styleCursor     = lipgloss.NewStyle().Background(colorCursorBg).Foreground(colorFg).Bold(true)
 	styleDoneCursor = lipgloss.NewStyle().Background(colorCursorBg).Foreground(colorMuted).Italic(true)
 	styleHint       = lipgloss.NewStyle().Foreground(colorMuted)
+	// styleTag paints an inline #tag as a tinted pill so it stands out from the
+	// surrounding description text.
+	styleTag = lipgloss.NewStyle().Background(colorTagBg).Foreground(colorTagFg)
 	// styleCheckDone mutes a completed checkbox line in the expanded markdown
 	// view so done sub-tasks recede beneath the outstanding ones.
 	styleCheckDone = lipgloss.NewStyle().Foreground(colorMuted)

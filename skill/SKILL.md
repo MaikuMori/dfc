@@ -28,6 +28,22 @@ printf 'Ship the migration\n\n- [ ] write migration\n- [ ] test on staging\n- [ 
 
 **Keep the checklist current as you work.** The task file is the source of truth — as you finish each subtask, mark it `- [x]` in the file so the badge advances; don't batch the updates to the end. Edit the file **in place** rather than rewriting the whole body (which would clobber the other lines): get its path with `dfc show <id> --json | jq -r .path`, then flip that one line's `- [ ]` to `- [x]`. The mtime sort / watcher picks the change up automatically. Markers may be `-`, `*`, `+`, or `1.`; `[X]` also counts as done. Items inside fenced code blocks are ignored.
 
+## Task tags
+
+A task can carry **inline `#tags`** anywhere in its description or details. They are parsed from the text (not stored separately), styled as colored pills in the TUI, and used for filtering — distinct from project categorical tags (`dfc tags`), though the two unite: a task's effective tags are its inline `#tags` **plus** its project's tags.
+
+- **Bare:** `#later`, `#p3`, nested `#area/backend`.
+- **Multi-word:** wrap in pounds — `#two words#`, `#area/biology 101#`.
+- **Escape:** `\#notatag` is literal text. `#tags` inside `` `code` `` or fenced blocks are ignored. A pure-number `#3` is not a tag (needs a letter).
+- **Filter:** `dfc s "#p3"` / `dfc ss "#p3"` keep tasks tagged `#p3`; `-#later` drops them; `#journal` also matches `#journal/2024` (hierarchy). Filtering is case-insensitive.
+
+Capture or tag a task by just writing the `#tag` in its text:
+
+```
+dfc c "ship the migration #p3 #backend"
+dfc ss "#backend" --json        # every task tagged #backend, across projects
+```
+
 ## Commands
 
 All flags below are exhaustive. Aliases shown in parens.
@@ -76,7 +92,7 @@ dfc ss <query>... [-p <slug-or-name>]      [--tag <name>]... [--status ...] [-n 
                   [--sort score|modified|created] [--json] [--reindex]
 ```
 
-- Query language: bare words are AND-ed and prefix-matched (`mac` → matches `macos`). Quoted `"exact phrase"` is exact. `-word` negates. `description:foo` / `details:bar` scope to a field.
+- Query language: bare words are AND-ed and prefix-matched (`mac` → matches `macos`). Quoted `"exact phrase"` is exact. `-word` negates. `description:foo` / `details:bar` scope to a field. `#tag` keeps only tasks carrying that tag, `-#tag` drops them (see [Task tags](#task-tags)); both combine with text and with each other. A query of only `#tags` lists the scoped tasks without a text rank. A leading `-` (e.g. `-#later` as the whole query) needs the `--` separator: `dfc ss --json -- -#later`.
 - `-p` wins over `-a`/scope defaults. Accepts slug or display name (case-insensitive).
 - `--tag <name>`: restrict to projects carrying this tag. Repeatable or comma-separated; OR semantics.
 - `-n, --limit`: cap hits (default 20).

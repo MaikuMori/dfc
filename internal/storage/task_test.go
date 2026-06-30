@@ -198,3 +198,11 @@ func TestUnmarshalRejectsUnterminatedFrontmatter(t *testing.T) {
 		t.Fatal("expected error")
 	}
 }
+
+func TestTaskTags(t *testing.T) {
+	task := Task{Description: "Ship it #p3", Details: "- [ ] step #later\nnotes #p3"}
+	got := task.Tags()
+	if len(got) != 2 || got[0] != "p3" || got[1] != "later" {
+		t.Errorf("Task.Tags() = %v, want [p3 later]", got)
+	}
+}

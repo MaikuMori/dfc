@@ -7,8 +7,21 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/MaikuMori/dfc/internal/query"
 	"github.com/MaikuMori/dfc/internal/storage"
 )
+
+// TagFilter is one #tag predicate applied in SQL, before LIMIT, so a
+// matching task can never be cut off by ranking. Tag is matched against the
+// task's mirrored inline tags with hierarchy ("a" also matches "a/b").
+// Projects lists slugs whose project-level (registry) tags already satisfy
+// the predicate — their tasks match regardless of inline tags. Exclude
+// inverts the whole predicate.
+type TagFilter struct {
+	Tag      string
+	Projects []string
+	Exclude  bool
+}
 
 // SearchOpts narrows and orders search results. Zero-values are valid:
 // the searcher returns all matches across every project / status,
@@ -20,9 +33,10 @@ type SearchOpts struct {
 	// registry. Empty slice = no match (intersect-with-empty); nil = no
 	// project restriction beyond Project.
 	Projects []string
-	Status   string // "open" | "done" | "" (any)
-	Limit    int    // 0 → defaultLimit
-	SortBy   string // "score" (default) | "modified" | "created"
+	Status   string      // "open" | "done" | "" (any)
+	Limit    int         // 0 → defaultLimit; negative → no limit
+	SortBy   string      // "score" (default) | "modified" | "created"
+	Tags     []TagFilter // #tag / -#tag predicates, AND-ed
 }
 
 // SearchHit is one returned match. Task carries the same shape as
@@ -36,6 +50,31 @@ type SearchHit struct {
 
 const defaultLimit = 20
 
+// sql renders the filter as one WHERE condition plus its bind args. A task
+// matches when it carries the tag inline (exactly, or nested under it — the
+// substr comparison is `tag/` as a prefix, mirroring tag.Has) or belongs to
+// one of the pre-resolved projects. substr instead of LIKE sidesteps `_`
+// being a LIKE wildcard, which is a legal tag character.
+func (f TagFilter) sql() (cond string, args []any) {
+	name := strings.ToLower(f.Tag)
+	cond = `EXISTS (SELECT 1 FROM task_tags tt
+		WHERE tt.id = tasks_meta.id AND (tt.tag = ? OR substr(tt.tag, 1, ?) = ?))`
+	args = []any{name, len(name) + 1, name + "/"}
+	if len(f.Projects) > 0 {
+		placeholders := strings.Repeat("?,", len(f.Projects))
+		cond = fmt.Sprintf(`(%s OR tasks_meta.project IN (%s))`, cond, placeholders[:len(placeholders)-1])
+		for _, p := range f.Projects {
+			args = append(args, p)
+		}
+	} else {
+		cond = `(` + cond + `)`
+	}
+	if f.Exclude {
+		cond = `NOT ` + cond
+	}
+	return cond, args
+}
+
 // Search runs an FTS5 MATCH against tasks_fts, applies optional
 // filters in SQL, and returns the top-N ranked hits.
 func (i *Index) Search(q string, opts SearchOpts) ([]SearchHit, error) {
@@ -48,8 +87,11 @@ func (i *Index) Search(q string, opts SearchOpts) ([]SearchHit, error) {
 		return nil, nil
 	}
 
+	// A negative limit passes through to SQLite, where LIMIT -1 means
+	// unlimited — the TUI uses that to show every match in its scrollable
+	// list.
 	limit := opts.Limit
-	if limit <= 0 {
+	if limit == 0 {
 		limit = defaultLimit
 	}
 
@@ -88,6 +130,11 @@ func (i *Index) Search(q string, opts SearchOpts) ([]SearchHit, error) {
 	if opts.Status != "" && opts.Status != "all" {
 		conds = append(conds, `tasks_meta.status = ?`)
 		args = append(args, opts.Status)
+	}
+	for _, f := range opts.Tags {
+		cond, condArgs := f.sql()
+		conds = append(conds, cond)
+		args = append(args, condArgs...)
 	}
 	args = append(args, limit)
 
@@ -161,7 +208,7 @@ var ftsColumns = map[string]bool{"description": true, "details": true}
 //   - We assemble `(pos1 AND pos2 …) NOT (neg1 OR neg2 …)`; an all-empty
 //     result returns "" so the caller treats it as "no matches".
 func sanitizeFTSQuery(q string) string {
-	tokens := Tokenize(q)
+	tokens := query.Tokenize(q)
 	if len(tokens) == 0 {
 		return ""
 	}

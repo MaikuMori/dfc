@@ -1,0 +1,3 @@
+kind: added
+body: 'The TUI filter footer shows syntax help and a live plain-English reading of the query (`showing: tagged #p3, not #later, matching "mig"`).'
+time: 2026-06-07T23:50:04.534398-04:00

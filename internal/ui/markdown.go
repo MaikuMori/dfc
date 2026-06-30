@@ -2,11 +2,14 @@ package ui
 
 import (
 	"regexp"
+	"strconv"
 	"strings"
 
 	"charm.land/glamour/v2"
 	"charm.land/glamour/v2/ansi"
 	"charm.land/glamour/v2/styles"
+
+	"github.com/MaikuMori/dfc/internal/tag"
 )
 
 // markdownStyles is built once at package init. We start from glamour's
@@ -54,6 +57,87 @@ var markdownStyles = func() ansi.StyleConfig {
 // ansiSGR matches the SGR escape sequences glamour emits for color and text
 // attributes — enough to recover the plain text of a rendered line.
 var ansiSGR = regexp.MustCompile("\x1b\\[[0-9;]*m")
+
+// glamourRun matches one of glamour's colored runs: an opening SGR (with
+// params), the run's text (no inner escapes), and the closing reset. glamour
+// emits each wrapped line as such a run, so pillTags can recolor tag spans
+// inside it.
+var glamourRun = regexp.MustCompile("\x1b\\[[0-9;]+m[^\x1b]*\x1b\\[0?m")
+
+// pillOpen / pillClose are styleTag's raw enter/exit sequences, captured once
+// so pillTags can wrap a tag's bytes inside an existing glamour run.
+var pillOpen, pillClose = func() (string, string) {
+	on, off, _ := strings.Cut(styleTag.Render("\x00"), "\x00")
+	return on, off
+}()
+
+// hasBackground reports whether an SGR sequence (e.g. "\x1b[38;5;228;48;5;63m")
+// sets a background color. It parses params rather than substring-matching so a
+// foreground color value that happens to be 48 isn't mistaken for the extended
+// background introducer — the extended-fg params (38;5;n / 38;2;r;g;b) are
+// skipped over before the scan looks for a background.
+func hasBackground(sgr string) bool {
+	s := strings.TrimSuffix(strings.TrimPrefix(sgr, "\x1b["), "m")
+	if s == "" {
+		return false
+	}
+	params := strings.Split(s, ";")
+	for i := 0; i < len(params); i++ {
+		switch params[i] {
+		case "48": // extended background introducer (48;5;n or 48;2;r;g;b)
+			return true
+		case "38": // extended foreground: skip its color value params
+			if i+1 < len(params) && params[i+1] == "5" {
+				i += 2
+			} else if i+1 < len(params) && params[i+1] == "2" {
+				i += 4
+			}
+		default:
+			if n, err := strconv.Atoi(params[i]); err == nil &&
+				((n >= 40 && n <= 47) || (n >= 100 && n <= 107)) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// pillTags repaints inline #tags in glamour's rendered output as pills. It runs
+// after word-wrap, so recoloring a finished run is zero-width and can't disturb
+// layout. For each colored run that holds tags, the run's text is split and
+// each tag span is wrapped in the pill style while the run's own color is
+// re-applied around the rest. Runs with a background (headings, code blocks)
+// are left alone so their styling isn't broken.
+func pillTags(s string) string {
+	if !strings.Contains(s, "#") {
+		return s
+	}
+	return glamourRun.ReplaceAllStringFunc(s, func(run string) string {
+		openEnd := strings.IndexByte(run, 'm') + 1
+		closeStart := strings.LastIndex(run, "\x1b[")
+		open, closer, text := run[:openEnd], run[closeStart:], run[openEnd:closeStart]
+		if hasBackground(open) {
+			return run // background run (heading / code block): leave it
+		}
+		spans := tag.Spans(text)
+		if len(spans) == 0 {
+			return run
+		}
+		var b strings.Builder
+		prev := 0
+		for _, sp := range spans {
+			if sp.Start > prev {
+				b.WriteString(open + text[prev:sp.Start] + closer)
+			}
+			b.WriteString(pillOpen + text[sp.Start:sp.End] + pillClose)
+			prev = sp.End
+		}
+		if prev < len(text) {
+			b.WriteString(open + text[prev:] + closer)
+		}
+		return b.String()
+	})
+}
 
 // dimDoneTasks mutes the lines of each completed checkbox item so finished
 // sub-tasks recede next to the outstanding ones. `checked` is the set of

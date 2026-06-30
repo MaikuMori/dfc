@@ -16,6 +16,7 @@ import (
 	"github.com/MaikuMori/dfc/internal/capture"
 	"github.com/MaikuMori/dfc/internal/index"
 	"github.com/MaikuMori/dfc/internal/project"
+	"github.com/MaikuMori/dfc/internal/savedsearch"
 	"github.com/MaikuMori/dfc/internal/storage"
 	"github.com/MaikuMori/dfc/internal/trash"
 )
@@ -27,8 +28,12 @@ type Core struct {
 	idx      *index.Index // nil when Open failed
 	indexErr error
 
-	mu     sync.Mutex
-	stores map[string]*storage.Store
+	mu       sync.Mutex
+	stores   map[string]*storage.Store
+	searches *savedsearch.Store // lazily loaded on first access
+
+	tagCacheMu sync.Mutex
+	tagCache   map[string]tagCacheEntry // task ID → parsed inline tags, keyed by mtime
 
 	warn func(op string, err error)
 }
@@ -49,9 +54,10 @@ func Open(opts Options) (*Core, error) {
 		return nil, err
 	}
 	c := &Core{
-		reg:    reg,
-		stores: map[string]*storage.Store{},
-		warn:   opts.Warn,
+		reg:      reg,
+		stores:   map[string]*storage.Store{},
+		tagCache: map[string]tagCacheEntry{},
+		warn:     opts.Warn,
 	}
 	if c.warn == nil {
 		c.warn = defaultWarn
@@ -92,6 +98,31 @@ func (c *Core) Close() error {
 // Registry returns the underlying project registry for callers that
 // need to read or mutate metadata directly (rename, tag).
 func (c *Core) Registry() *project.Registry { return c.reg }
+
+// SavedSearches returns the saved-search store, loading it on first use.
+// Loading is deferred so a missing or unreadable searches.json never blocks
+// Core.Open — only callers that actually use saved searches see the error.
+func (c *Core) SavedSearches() (*savedsearch.Store, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.searches == nil {
+		s, err := savedsearch.Load()
+		if err != nil {
+			return nil, err
+		}
+		c.searches = s
+	}
+	return c.searches, nil
+}
+
+// InvalidateSavedSearches drops the cached saved-search store so the next
+// SavedSearches call re-reads searches.json. The TUI calls this on filesystem
+// change events — another process may have added or removed a saved search.
+func (c *Core) InvalidateSavedSearches() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.searches = nil
+}
 
 // HasIndex reports whether the search index opened successfully. The
 // TUI uses this to pick between FTS5-backed search and the in-memory

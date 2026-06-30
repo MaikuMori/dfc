@@ -44,11 +44,11 @@ func (i *Index) bootstrap(wipe bool) error {
 		return err
 	}
 
-	upsert, err := tx.Prepare(upsertSQL)
+	w, err := newTaskWriter(tx)
 	if err != nil {
-		return fmt.Errorf("could not prepare search index rebuild: %w", err)
+		return err
 	}
-	defer func() { _ = upsert.Close() }()
+	defer w.close()
 
 	for _, e := range entries {
 		if !e.IsDir() {
@@ -63,11 +63,8 @@ func (i *Index) bootstrap(wipe bool) error {
 			continue
 		}
 		for _, t := range tasks {
-			if _, err := upsert.Exec(
-				t.ID, t.ProjectSlug, t.Path, string(t.Status),
-				t.Description, t.Details, t.Created.Unix(), t.Modified.Unix(),
-			); err != nil {
-				return fmt.Errorf("could not index task %s during rebuild: %w", t.ID, err)
+			if err := w.put(t); err != nil {
+				return fmt.Errorf("search index rebuild failed: %w", err)
 			}
 		}
 	}
@@ -217,17 +214,14 @@ func (i *Index) reindexProject(slug string) error {
 	if _, err := tx.Exec(`DELETE FROM tasks_meta WHERE project = ?`, slug); err != nil {
 		return fmt.Errorf("could not clear project %s from index: %w", slug, err)
 	}
-	upsert, err := tx.Prepare(upsertSQL)
+	w, err := newTaskWriter(tx)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = upsert.Close() }()
+	defer w.close()
 	for _, t := range tasks {
-		if _, err := upsert.Exec(
-			t.ID, t.ProjectSlug, t.Path, string(t.Status),
-			t.Description, t.Details, t.Created.Unix(), t.Modified.Unix(),
-		); err != nil {
-			return fmt.Errorf("could not reindex task %s: %w", t.ID, err)
+		if err := w.put(t); err != nil {
+			return fmt.Errorf("project reindex failed: %w", err)
 		}
 	}
 	return tx.Commit()

@@ -25,7 +25,6 @@ const (
 	modeCaptureTarget // picker that chooses a project to capture into (global view only)
 	modeMoveTarget    // picker that chooses a project to move the cursor task into
 	modeTagEdit       // multi-select picker that edits a project's categorical tags
-	modeTagFilter     // multi-select picker that drives the global-view tag filter
 	modeHelp
 )
 
@@ -57,17 +56,14 @@ type Model struct {
 	watchSub     <-chan watch.Event
 
 	globalView    bool
-	capTargetSlug string         // set transiently when capturing into a picker-chosen project; "" = current store
-	moveSrcID     string         // task id being moved while modeMoveTarget is open; "" = none
-	moveSrcSlug   string         // source project slug of the task being moved
-	moveSrcIndex  int            // cursor index at move-open, for the per-project "stay put" fallback
-	lastBody      string         // last body string handed to viewport.SetContent — used to skip redundant re-splits
-	searchQuery   string         // active filter; "" = no filter
-	searchBase    []storage.Task // no-index fallback corpus, snapshotted on search entry
+	capTargetSlug string // set transiently when capturing into a picker-chosen project; "" = current store
+	moveSrcID     string // task id being moved while modeMoveTarget is open; "" = none
+	moveSrcSlug   string // source project slug of the task being moved
+	moveSrcIndex  int    // cursor index at move-open, for the per-project "stay put" fallback
+	lastBody      string // last body string handed to viewport.SetContent — used to skip redundant re-splits
+	searchQuery   string // active filter; "" = no filter
 	sortKey       sortKey
-	tagFilter     []string       // session-only categorical-tag filter, applied in global view
-	tagFilterBase []storage.Task // pre-filter merged list, cached while the tag-filter picker is open
-	tagEditSlug   string         // set transiently while modeTagEdit is running
+	tagEditSlug   string // set transiently while modeTagEdit is running
 }
 
 // New constructs a Model bound to the given Core, project slug, store
@@ -143,17 +139,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.err = err
 			}
 		}
-		if m.searchBase != nil {
-			if m.globalView {
-				m.searchBase = m.reloadAll().tasks
-			} else {
-				m.searchBase = m.reload().tasks
-			}
-		}
 		m = m.reloadAfterFS()
-		if m.mode == modeTagFilter {
-			m.tagFilterBase, _ = m.core.ListAll()
-		}
 		// Keep the search index in step with whatever the filesystem
 		// changed underneath us, off the Update goroutine so the disk
 		// walk plus SQLite writes never stall a keypress. Best-effort —
@@ -209,8 +195,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateMoveTarget(msg)
 		case modeTagEdit:
 			return m.updateTagEdit(msg)
-		case modeTagFilter:
-			return m.updateTagFilter(msg)
 		case modeHelp:
 			return m.updateHelp(msg)
 		}
@@ -254,8 +238,6 @@ func (m Model) View() tea.View {
 			hintText = joinBindings(keys.MoveTargetHints())
 		case m.mode == modeTagEdit:
 			hintText = joinBindings(keys.TagEditHints())
-		case m.mode == modeTagFilter:
-			hintText = joinBindings(keys.TagFilterHints())
 		}
 		hint := styleHint.Render(hintText)
 		block := pickerView + "\n" + hint
@@ -308,46 +290,13 @@ func (m Model) View() tea.View {
 
 func (m Model) header() string {
 	if m.globalView {
-		// While the tag-filter picker is open, project a live count
-		// against the picker's current selection so toggling rows updates
-		// the visible total instead of waiting for the commit.
-		filter, count := m.tagFilter, len(m.tasks)
-		if m.mode == modeTagFilter {
-			filter = m.picker.Selection()
-			count = m.countTasksMatchingTagFilter(filter)
-		}
-		label := fmt.Sprintf("all (%d)", count)
-		if len(filter) > 0 {
-			label += "  " + styleHint.Render("filter: ["+strings.Join(filter, ", ")+"]")
-		}
-		return styleHeader.Render(label)
+		return styleHeader.Render(fmt.Sprintf("all (%d)", len(m.tasks)))
 	}
 	name := m.slug
 	if m.core != nil {
 		name = m.core.Registry().Name(m.slug)
 	}
 	return styleHeader.Render(name)
-}
-
-// countTasksMatchingTagFilter returns how many tasks from the cached
-// pre-filter list (tagFilterBase, captured when the picker opened) would
-// survive the given tag filter. Used for live previewing the post-commit
-// count while the tag-filter picker is open, without re-reading every
-// project from disk on each keystroke.
-func (m Model) countTasksMatchingTagFilter(filter []string) int {
-	all := m.tagFilterBase
-	if len(filter) == 0 {
-		return len(all)
-	}
-	reg := m.core.Registry()
-	tf := newTagFilterSet(filter)
-	n := 0
-	for _, t := range all {
-		if tf.matches(reg, t.ProjectSlug) {
-			n++
-		}
-	}
-	return n
 }
 
 func (m Model) footer() string {
@@ -359,12 +308,20 @@ func (m Model) footer() string {
 	}
 	switch {
 	case m.mode == modeSearch:
-		return styleHint.Render(joinBindings(keys.SearchHints()))
+		// While typing, echo a plain-English reading of the query as feedback;
+		// before anything is typed, show the syntax to help write it.
+		if exp := explainQuery(m.searchQuery); exp != "" {
+			return styleHint.Render("showing: " + exp + " · " + joinBindings(keys.SearchHints()))
+		}
+		return styleHint.Render("filter: text · #tag · -#tag · " + joinBindings(keys.SearchHints()))
 	case m.mode == modeCapture:
 		return styleHint.Render(joinBindings(keys.CaptureHints()))
 	case m.mode != modeList:
 		return styleHint.Render(joinBindings(keys.InputHints()))
 	case m.searchQuery != "":
+		if exp := explainQuery(m.searchQuery); exp != "" {
+			return styleHint.Render("showing: " + exp + " · " + joinBindings(keys.FilterHints()))
+		}
 		return styleHint.Render(fmt.Sprintf("filter: %q · %s", m.searchQuery, joinBindings(keys.FilterHints())))
 	default:
 		return renderShortHelp(m.width)

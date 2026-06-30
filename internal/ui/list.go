@@ -10,7 +10,62 @@ import (
 	"github.com/muesli/reflow/wordwrap"
 
 	"github.com/MaikuMori/dfc/internal/storage"
+	"github.com/MaikuMori/dfc/internal/tag"
 )
+
+// maxRowTags caps how many #tag pills a collapsed row shows; any beyond it
+// collapse into a "+N" indicator so a heavily-tagged task can't crowd out its
+// title.
+const maxRowTags = 3
+
+// stripTags removes inline #tag spans from a plain string and collapses the
+// whitespace they leave behind, returning the bare title text. A collapsed row
+// shows the title with its tags lifted out and grouped after it, so they read
+// as a set instead of scattered through the words.
+func stripTags(s string) string {
+	spans := tag.Spans(s)
+	if len(spans) == 0 {
+		return s
+	}
+	var b strings.Builder
+	prev := 0
+	for _, sp := range spans {
+		b.WriteString(s[prev:sp.Start])
+		prev = sp.End
+	}
+	b.WriteString(s[prev:])
+	return strings.Join(strings.Fields(b.String()), " ")
+}
+
+// rowTags renders a row's collected #tags as a trailing group: up to maxRowTags
+// pills followed by a "+N" overflow indicator. It returns the styled form (tag
+// pills for foreground-only open rows), the raw form (embedded inside cursor /
+// done rows whose outer style would otherwise mangle a pill's reset codes — the
+// same reason the project prefix is embedded raw), and the display width of the
+// raw form for wrap accounting. All three are empty / zero when tags is empty.
+func rowTags(tags []string) (styled, raw string, width int) {
+	if len(tags) == 0 {
+		return "", "", 0
+	}
+	shown, overflow := tags, 0
+	if len(tags) > maxRowTags {
+		shown, overflow = tags[:maxRowTags], len(tags)-maxRowTags
+	}
+	rawParts := make([]string, 0, len(shown)+1)
+	styledParts := make([]string, 0, len(shown)+1)
+	for _, t := range shown {
+		pill := "#" + t
+		rawParts = append(rawParts, pill)
+		styledParts = append(styledParts, styleTag.Render(pill))
+	}
+	if overflow > 0 {
+		more := fmt.Sprintf("+%d", overflow)
+		rawParts = append(rawParts, more)
+		styledParts = append(styledParts, styleHint.Render(more))
+	}
+	raw = strings.Join(rawParts, " ")
+	return strings.Join(styledParts, " "), raw, runewidth.StringWidth(raw)
+}
 
 // progressBadge returns a "[done/total]" checkbox-progress badge for the task,
 // or "" when it carries no task-list items.
@@ -63,7 +118,6 @@ type rowKey struct {
 	cursor   bool
 	expanded bool
 	width    int
-	flatDone bool
 }
 
 // rowCache holds the previous frame's per-row keys and rendered strings.
@@ -79,10 +133,6 @@ func buildRows(m Model, width int) (rows []string, heights []int) {
 	if len(m.tasks) == 0 {
 		return []string{styleEmpty.Render("No tasks yet.")}, []int{1}
 	}
-	// When a search filter is active, done rows render in the open style so
-	// the eye can scan results without strikethrough/dim interfering — the
-	// green check is enough state cue in that context.
-	flatDone := m.searchQuery != ""
 	rows = make([]string, len(m.tasks))
 	heights = make([]int, len(m.tasks))
 
@@ -96,7 +146,7 @@ func buildRows(m Model, width int) (rows []string, heights []int) {
 		k := rowKey{
 			id: t.ID, slug: t.ProjectSlug, modified: t.Modified.UnixNano(),
 			status: t.Status, prefix: prefix, cursor: i == m.cursor,
-			expanded: expanded, width: width, flatDone: flatDone,
+			expanded: expanded, width: width,
 		}
 		keys[i] = k
 
@@ -105,9 +155,9 @@ func buildRows(m Model, width int) (rows []string, heights []int) {
 		case i < len(rowCache.keys) && rowCache.keys[i] == k:
 			row = rowCache.rows[i]
 		case expanded:
-			row = renderTaskMarkdown(t, prefix, width)
+			row = renderTaskMarkdown(t, prefix, width, rowInlineTags(m, t))
 		default:
-			row = renderRow(t, prefix, i == m.cursor, width, flatDone)
+			row = renderRow(t, prefix, i == m.cursor, width, rowInlineTags(m, t))
 		}
 		rows[i] = row
 		heights[i] = strings.Count(row, "\n") + 1
@@ -115,6 +165,18 @@ func buildRows(m Model, width int) (rows []string, heights []int) {
 	rowCache.keys = keys
 	rowCache.rows = rows
 	return rows, heights
+}
+
+// rowInlineTags returns a task's inline #tags for the collapsed row's tag
+// group, going through core's (ID, mtime) memo so a full rebuild doesn't
+// re-parse every task's markdown. Project tags are deliberately excluded: they
+// apply uniformly to every task in the project, so showing them on each row
+// would be noise.
+func rowInlineTags(m Model, t storage.Task) []string {
+	if m.core != nil {
+		return m.core.InlineTags(t)
+	}
+	return t.Tags()
 }
 
 // prefixMaxLen caps the rendered `[project]` width so a chatty project name
@@ -139,12 +201,11 @@ func projectPrefix(m Model, t storage.Task) string {
 	return "[" + name + "] "
 }
 
-// renderRow renders one collapsed task row.
-//
-// flatDone collapses done-vs-open styling: the row paints in the open
-// style with just the ✓ glyph swapped in for the ○. Used during search so
-// matching done tasks are as easy to scan as open ones.
-func renderRow(t storage.Task, prefix string, cursor bool, width int, flatDone bool) string {
+// renderRow renders one collapsed task row. The task's #tags are lifted out of
+// the title and grouped after it (capped, with a "+N" overflow), so a glance
+// reads the title cleanly and its tags as a set. Styling is identical in every
+// view (a filtered list renders done tasks the same muted way as the full list).
+func renderRow(t storage.Task, prefix string, cursor bool, width int, tags []string) string {
 	icon := iconOpen
 	if t.Status == storage.StatusDone {
 		icon = iconDone
@@ -157,6 +218,8 @@ func renderRow(t storage.Task, prefix string, cursor bool, width int, flatDone b
 	hasDetails := strings.TrimSpace(t.Details) != ""
 	done := t.Status == storage.StatusDone
 
+	groupStyled, groupRaw, groupWidth := rowTags(tags)
+
 	// The trailing hint after the description: a checkbox-progress badge when
 	// the task has sub-tasks, otherwise the "…" dot when it has any details.
 	// The badge supersedes the dot — a task with sub-tasks always has details,
@@ -166,31 +229,30 @@ func renderRow(t storage.Task, prefix string, cursor bool, width int, flatDone b
 		trailer = iconHasDetails
 	}
 
-	// Reserve room for the trailer (" " + trailer) so the description wraps
-	// before it, never past it. Otherwise a full-width title plus the appended
-	// trailer overflows into a terminal-wrapped extra row that the height
-	// accounting below doesn't count, drifting the viewport.
-	trailerWidth := 0
-	if trailer != "" {
-		trailerWidth = 1 + runewidth.StringWidth(trailer)
+	// Reserve room for the tag group and trailer (each as " " + text) so the
+	// title wraps before them, never past them. Otherwise a full-width title
+	// plus the appended group/trailer overflows into a terminal-wrapped extra
+	// row that the height accounting below doesn't count, drifting the viewport.
+	reserve := 0
+	if groupWidth > 0 {
+		reserve += 1 + groupWidth
 	}
-	wrapWidth := width - iconWidth - prefixWidth - trailerWidth
+	if trailer != "" {
+		reserve += 1 + runewidth.StringWidth(trailer)
+	}
+	wrapWidth := width - iconWidth - prefixWidth - reserve
 	if wrapWidth < 1 {
 		wrapWidth = 1
 	}
 
-	wrapped := wordwrap.String(t.Description, wrapWidth)
+	wrapped := wordwrap.String(stripTags(t.Description), wrapWidth)
 	lines := strings.Split(wrapped, "\n")
 
-	// Open-style rendering (non-cursor): the icon paints separately so a
-	// done check mark can be green even while the description sits in the
-	// regular foreground. Tag dims so global-view rows scan as one column.
-	if !cursor && (!done || flatDone) {
-		iconStyled := styleOpen.Render(icon + " ")
-		if done {
-			iconStyled = styleDoneIcon.Render(icon) + styleOpen.Render(" ")
-		}
-		first := iconStyled
+	// Open non-cursor rows render foreground-only, so the project prefix and
+	// #tag pills compose cleanly. Done and cursor rows take the outer-style
+	// path below.
+	if !cursor && !done {
+		first := styleOpen.Render(icon + " ")
 		if prefix != "" {
 			first += styleHint.Render(prefix)
 		}
@@ -201,19 +263,27 @@ func renderRow(t storage.Task, prefix string, cursor bool, width int, flatDone b
 			rest[i] = styleOpen.Render(indent + lines[i])
 		}
 		rendered := strings.Join(rest, "\n")
+		if groupStyled != "" {
+			rendered += " " + groupStyled
+		}
 		if trailer != "" {
 			rendered += " " + styleHint.Render(trailer)
 		}
 		return rendered
 	}
 
-	// Everything else: raw prefix in the text, single outer style.
+	// Everything else: raw prefix and raw tag group in the text, single outer
+	// style. Pills can't nest inside an outer style that changes background or
+	// attributes, so the group rides along as plain text the row style paints.
 	for i, line := range lines {
 		if i == 0 {
 			lines[i] = icon + " " + prefix + line
 		} else {
 			lines[i] = indent + line
 		}
+	}
+	if groupRaw != "" {
+		lines[len(lines)-1] += " " + groupRaw
 	}
 	if trailer != "" && cursor {
 		lines[len(lines)-1] += " " + trailer
@@ -245,7 +315,7 @@ func renderRow(t storage.Task, prefix string, cursor bool, width int, flatDone b
 // gaining markdown styling instead of a jumping layout. In global view,
 // the project prefix goes between icon and title on the first rendered line
 // so the row's ownership stays visible while expanded.
-func renderTaskMarkdown(t storage.Task, prefix string, width int) string {
+func renderTaskMarkdown(t storage.Task, prefix string, width int, tags []string) string {
 	const iconWidth = 2 // "○ " or "✓ "
 	prefixWidth := runewidth.StringWidth(prefix)
 
@@ -260,11 +330,11 @@ func renderTaskMarkdown(t storage.Task, prefix string, width int) string {
 	// view would overflow the terminal; fall back to the collapsed row
 	// so a tiny screen stays legible.
 	if mdWidth < 20 {
-		return renderRow(t, prefix, false, width, false)
+		return renderRow(t, prefix, false, width, tags)
 	}
 	rendered := cachedMarkdown(t, mdWidth)
 	if rendered == "" {
-		return renderRow(t, prefix, false, width, false)
+		return renderRow(t, prefix, false, width, tags)
 	}
 
 	icon := iconOpen
@@ -313,6 +383,7 @@ func cachedMarkdown(t storage.Task, width int) string {
 	if out != "" {
 		out = stripCommonLeadingSpaces(out)
 		out = dimDoneTasks(out, storage.CheckedItems(t.Details))
+		out = pillTags(out)
 	}
 	markdownCache.id = t.ID
 	markdownCache.modified = t.Modified

@@ -14,6 +14,8 @@ import (
 	"github.com/yuin/goldmark/parser"
 	"github.com/yuin/goldmark/text"
 	"gopkg.in/yaml.v3"
+
+	"github.com/MaikuMori/dfc/internal/tag"
 )
 
 // mdParser is shared by every splitBody call. goldmark's parser is safe for
@@ -103,6 +105,17 @@ type Task struct {
 	Path        string    `yaml:"-"`
 	Modified    time.Time `yaml:"-"` // populated from filesystem mtime, used for sorting
 	ProjectSlug string    `yaml:"-"` // populated by Store.tagOwn; never persisted
+}
+
+// Tags returns the inline #tags carried by the task (description and
+// details), in document order, case-insensitively unique. This is the per-task
+// tag set used for filtering — distinct from the project-level categorical tags
+// in the registry.
+func (t Task) Tags() []string {
+	if t.Details == "" {
+		return tag.FromMarkdown(t.Description)
+	}
+	return tag.FromMarkdown(t.Description + "\n\n" + t.Details)
 }
 
 const frontmatterSep = "---"

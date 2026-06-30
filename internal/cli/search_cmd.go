@@ -9,8 +9,10 @@ import (
 	"github.com/muesli/reflow/wordwrap"
 	"golang.org/x/term"
 
+	"github.com/MaikuMori/dfc/internal/core"
 	"github.com/MaikuMori/dfc/internal/index"
 	"github.com/MaikuMori/dfc/internal/project"
+	"github.com/MaikuMori/dfc/internal/query"
 )
 
 // SearchCmd queries the FTS5-backed index. Default scope is the cwd's
@@ -127,7 +129,10 @@ func (c *SearchCmd) Run() error {
 		projectSet = projectSlugsMatchingTags(cr.Registry(), tagFilter)
 	}
 
-	hits, err := cr.Search(q, index.SearchOpts{
+	// Core.Query is the shared executor: it expands `@name`, splits #tag /
+	// -#tag predicates from the residual text, searches/lists accordingly, and
+	// over-fetches before tag filtering so the limit can't drop tag matches.
+	res, err := cr.Query(q, core.QueryOpts{
 		Project:  scope,
 		Projects: projectSet,
 		Status:   c.Status,
@@ -137,6 +142,7 @@ func (c *SearchCmd) Run() error {
 	if err != nil {
 		return err
 	}
+	hits := res.Hits
 
 	if c.JSON {
 		for _, h := range hits {
@@ -157,7 +163,7 @@ func (c *SearchCmd) Run() error {
 		return nil
 	}
 
-	terms := index.PositiveTerms(q)
+	terms := query.PositiveTerms(res.Text)
 	useANSI := term.IsTerminal(int(os.Stdout.Fd()))
 	groupByProject := countProjects(hits) > 1
 	contentWidth := computeContentWidth()

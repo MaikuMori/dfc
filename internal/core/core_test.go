@@ -2,13 +2,16 @@ package core
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 
+	"github.com/MaikuMori/dfc/internal/index"
 	"github.com/MaikuMori/dfc/internal/project"
+	"github.com/MaikuMori/dfc/internal/savedsearch"
 	"github.com/MaikuMori/dfc/internal/storage"
 )
 
@@ -842,17 +845,189 @@ func TestHasIndexAndEnsureFresh(t *testing.T) {
 
 // indexAllOpts builds a SearchOpts that selects every status across
 // every project — used as a shorthand in core tests.
-func indexAllOpts() indexSearchOptsAlias {
-	return indexSearchOptsAlias{Status: "all", Limit: 50, SortBy: "score"}
+func indexAllOpts() index.SearchOpts {
+	return index.SearchOpts{Status: "all", Limit: 50, SortBy: "score"}
 }
 
-// indexSearchOptsAlias mirrors index.SearchOpts at the field level so
-// these tests don't need to import internal/index directly. The Core
-// Search method accepts any value with the same field set.
-type indexSearchOptsAlias = struct {
-	Project  string
-	Projects []string
-	Status   string
-	Limit    int
-	SortBy   string
+func TestQueryTagFilter(t *testing.T) {
+	cr := newTestCore(t)
+	for _, d := range []string{"a #p3", "b #later", "c #p3 #later", "d none"} {
+		if _, err := cr.Capture(CaptureInput{Slug: "acme", Description: d}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A separate task in a project tagged "work" carries no inline tags.
+	if _, err := cr.Capture(CaptureInput{Slug: "beta", Description: "e in work"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cr.Registry().SetTags("beta", []string{"work"}); err != nil {
+		t.Fatal(err)
+	}
+
+	descs := func(res QueryResult) []string {
+		var out []string
+		for _, h := range res.Hits {
+			out = append(out, h.Task.Description)
+		}
+		slices.Sort(out)
+		return out
+	}
+	cases := []struct {
+		name  string
+		query string
+		want  []string
+	}{
+		{"include inline", "#p3", []string{"a #p3", "c #p3 #later"}},
+		{"exclude inline", "-#later", []string{"a #p3", "d none", "e in work"}},
+		{"include + exclude", "#p3 -#later", []string{"a #p3"}},
+		{"project tag union", "#work", []string{"e in work"}},
+		{"empty passes all", "", []string{"a #p3", "b #later", "c #p3 #later", "d none", "e in work"}},
+	}
+	for _, c := range cases {
+		res, err := cr.Query(c.query, QueryOpts{})
+		if err != nil {
+			t.Fatalf("%s: Query: %v", c.name, err)
+		}
+		if got := descs(res); !slices.Equal(got, c.want) {
+			t.Errorf("%s: Query(%q) = %v, want %v", c.name, c.query, got, c.want)
+		}
+	}
+}
+
+func TestQuery(t *testing.T) {
+	cr := newTestCore(t)
+	// One #p3 task plus 25 plain "alpha" tasks, so a small-limit text search
+	// would drop the tag match if the predicate weren't applied before LIMIT.
+	if _, err := cr.Capture(CaptureInput{Slug: "proj", Description: "alpha zero #p3"}); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 25; i++ {
+		if _, err := cr.Capture(CaptureInput{Slug: "proj", Description: fmt.Sprintf("alpha %d", i)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ss, _ := cr.SavedSearches()
+	if err := ss.Set("p3 only", "#p3"); err != nil {
+		t.Fatal(err)
+	}
+
+	// The tag predicate applies before LIMIT, so the match survives a small
+	// limit on a text query.
+	res, err := cr.Query("alpha #p3", QueryOpts{Limit: 5})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Hits) != 1 || res.Hits[0].Task.Description != "alpha zero #p3" {
+		t.Errorf("text+tag: got %d hits", len(res.Hits))
+	}
+	if !res.Ranked {
+		t.Error("a text query should come back Ranked")
+	}
+
+	// Project (registry) tags satisfy a predicate on the text path too —
+	// matched by slug in SQL, not by mirrored inline tags.
+	if _, err := cr.Capture(CaptureInput{Slug: "beta", Description: "alpha in beta"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cr.Registry().SetTags("beta", []string{"work"}); err != nil {
+		t.Fatal(err)
+	}
+	res, err = cr.Query("alpha #work", QueryOpts{Limit: 5})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Hits) != 1 || res.Hits[0].Task.Description != "alpha in beta" {
+		t.Errorf("text+project tag: got %d hits, want only the beta task", len(res.Hits))
+	}
+
+	// Tags-only: lists then filters; not ranked.
+	res, _ = cr.Query("#p3", QueryOpts{})
+	if len(res.Hits) != 1 || res.Ranked {
+		t.Errorf("tags-only: hits=%d ranked=%v, want 1/false", len(res.Hits), res.Ranked)
+	}
+
+	// @name (free-text) expansion.
+	if res, _ = cr.Query("@p3 only", QueryOpts{}); len(res.Hits) != 1 {
+		t.Errorf("@name expansion: got %d hits, want 1", len(res.Hits))
+	}
+	if _, err := cr.Query("@nope", QueryOpts{}); err == nil {
+		t.Error("unknown @name should error")
+	}
+}
+
+func TestInlineTagsCache(t *testing.T) {
+	cr := newTestCore(t)
+	base := storage.Task{ID: "01HCACHE0000000000000000AA", ProjectSlug: "p"}
+	base.Modified = base.Modified.Add(1) // non-zero mtime
+
+	t1 := base
+	t1.Description = "first #alpha"
+	if got := cr.TaskTags(t1); len(got) != 1 || got[0] != "alpha" {
+		t.Fatalf("first TaskTags = %v, want [alpha]", got)
+	}
+	// Same ID + same mtime but different content returns the cached parse —
+	// proves the memo is keyed by (ID, mtime). In practice content only
+	// changes alongside the mtime, so this can't surface stale data.
+	t2 := base
+	t2.Description = "second #beta"
+	if got := cr.TaskTags(t2); len(got) != 1 || got[0] != "alpha" {
+		t.Errorf("same key TaskTags = %v, want cached [alpha]", got)
+	}
+	// A newer mtime re-parses.
+	t3 := base
+	t3.Modified = t3.Modified.Add(1)
+	t3.Description = "third #gamma"
+	if got := cr.TaskTags(t3); len(got) != 1 || got[0] != "gamma" {
+		t.Errorf("newer mtime TaskTags = %v, want [gamma]", got)
+	}
+}
+
+func TestTaskTagsDoesNotMutateCache(t *testing.T) {
+	cr := newTestCore(t)
+	if _, err := cr.Capture(CaptureInput{Slug: "p", Description: "seed"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cr.Registry().SetTags("p", []string{"work"}); err != nil {
+		t.Fatal(err)
+	}
+	task := storage.Task{ID: "01HCACHE0000000000000000BB", ProjectSlug: "p", Description: "x #inline"}
+	task.Modified = task.Modified.Add(1)
+	// Two calls must each return inline + project tags; the first must not have
+	// corrupted the cached inline slice via append.
+	a := cr.TaskTags(task)
+	b := cr.TaskTags(task)
+	want := []string{"inline", "work"}
+	if !slices.Equal(a, want) || !slices.Equal(b, want) {
+		t.Errorf("TaskTags = %v / %v, want %v (cached slice mutated?)", a, b, want)
+	}
+}
+
+func TestInvalidateSavedSearches(t *testing.T) {
+	cr := newTestCore(t)
+	stale, err := cr.SavedSearches()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Another process writes a saved search behind the cached store's back.
+	other, err := savedsearch.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := other.Set("ext", "#p3"); err != nil {
+		t.Fatal(err)
+	}
+	if again, _ := cr.SavedSearches(); again != stale {
+		t.Fatal("SavedSearches should return the cached store until invalidated")
+	}
+	if _, ok := stale.Get("ext"); ok {
+		t.Fatal("cached store should not see the external write yet")
+	}
+	cr.InvalidateSavedSearches()
+	fresh, err := cr.SavedSearches()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if q, ok := fresh.Get("ext"); !ok || q != "#p3" {
+		t.Errorf("Get(ext) after invalidate = %q,%v; want %q,true", q, ok, "#p3")
+	}
 }

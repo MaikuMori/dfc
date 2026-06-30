@@ -22,12 +22,13 @@ import (
 )
 
 // schemaVersion is bumped any time the on-disk DDL changes in a way
-// that requires migration. v1 is the initial layout.
-const schemaVersion = 1
+// that requires migration. v1 is the initial layout; v2 adds task_tags,
+// the per-task mirror of inline #tags.
+const schemaVersion = 2
 
-// upsertSQL is the canonical insert-or-update for tasks_meta. Both the
-// per-task Upsert and the batched Bootstrap path use this string so the
-// columns can never drift between them.
+// upsertSQL is the canonical insert-or-update for tasks_meta. Every write
+// path funnels through taskWriter, which pairs it with the task_tags
+// refresh so the two tables can never drift.
 const upsertSQL = `
 	INSERT INTO tasks_meta (id, project, path, status, description, details, created, modified)
 	VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -40,6 +41,11 @@ const upsertSQL = `
 		created     = excluded.created,
 		modified    = excluded.modified
 `
+
+const (
+	clearTagsSQL = `DELETE FROM task_tags WHERE id = ?`
+	insertTagSQL = `INSERT INTO task_tags (id, tag) VALUES (?, ?)`
+)
 
 // Index is a handle on the SQLite-backed search index.
 type Index struct {
@@ -99,6 +105,12 @@ func (i *Index) migrate() error {
 		if err := i.createV1(); err != nil {
 			return err
 		}
+		v = 1
+	}
+	if v < 2 {
+		if err := i.migrateV2(); err != nil {
+			return err
+		}
 	}
 	// Future migrations: chain `if v < N { migrateToN(); v = N }` blocks here.
 	return nil
@@ -141,7 +153,7 @@ func (i *Index) createV1() error {
 			INSERT INTO tasks_fts(rowid, description, details)
 			VALUES (new.rowid, new.description, new.details);
 		END`,
-		fmt.Sprintf(`PRAGMA user_version = %d`, schemaVersion),
+		`PRAGMA user_version = 1`,
 	}
 	tx, err := i.db.Begin()
 	if err != nil {
@@ -156,23 +168,163 @@ func (i *Index) createV1() error {
 	return tx.Commit()
 }
 
-// Upsert inserts or replaces a row keyed by the task's ULID. The FTS
-// trigger keeps tasks_fts in sync automatically.
-func (i *Index) Upsert(t storage.Task) error {
+// migrateV2 adds task_tags — one lowercased inline #tag per row, mirroring
+// what storage.Task.Tags() extracts from the task's markdown — and backfills
+// it from the descriptions/details already in tasks_meta. The AFTER DELETE
+// trigger keeps the table in step with every delete path (single-row Delete,
+// project clears, and full wipes) without each call site remembering to.
+func (i *Index) migrateV2() error {
+	tx, err := i.db.Begin()
+	if err != nil {
+		return fmt.Errorf("could not begin search index migration: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	stmts := []string{
+		`CREATE TABLE task_tags (
+			id  TEXT NOT NULL,
+			tag TEXT NOT NULL,
+			PRIMARY KEY (id, tag)
+		) WITHOUT ROWID`,
+		`CREATE INDEX idx_task_tags_tag ON task_tags(tag)`,
+		`CREATE TRIGGER task_tags_ad AFTER DELETE ON tasks_meta BEGIN
+			DELETE FROM task_tags WHERE id = old.id;
+		END`,
+	}
+	for _, s := range stmts {
+		if _, err := tx.Exec(s); err != nil {
+			return fmt.Errorf("search index migration failed: %w\nstmt: %s", err, strings.TrimSpace(s))
+		}
+	}
+	backfill, err := tagBackfill(tx)
+	if err != nil {
+		return err
+	}
+	for _, p := range backfill {
+		for _, name := range p.tags {
+			if _, err := tx.Exec(insertTagSQL, p.id, strings.ToLower(name)); err != nil {
+				return fmt.Errorf("could not backfill tags for task %s: %w", p.id, err)
+			}
+		}
+	}
+	if _, err := tx.Exec(`PRAGMA user_version = 2`); err != nil {
+		return fmt.Errorf("search index migration failed: %w", err)
+	}
+	return tx.Commit()
+}
+
+// taskTags pairs a task id with its parsed inline tags during the v2
+// backfill.
+type taskTags struct {
+	id   string
+	tags []string
+}
+
+// tagBackfill re-derives every indexed task's inline tags from the content
+// already in tasks_meta. Results are collected before the caller writes them:
+// the pool holds a single connection, so the SELECT must be fully drained
+// before inserts can proceed on the same transaction.
+func tagBackfill(tx *sql.Tx) ([]taskTags, error) {
+	rows, err := tx.Query(`SELECT id, description, details FROM tasks_meta`)
+	if err != nil {
+		return nil, fmt.Errorf("could not read tasks for tag backfill: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []taskTags
+	for rows.Next() {
+		var id string
+		var t storage.Task
+		if err := rows.Scan(&id, &t.Description, &t.Details); err != nil {
+			return nil, fmt.Errorf("could not scan task for tag backfill: %w", err)
+		}
+		if tags := t.Tags(); len(tags) > 0 {
+			out = append(out, taskTags{id: id, tags: tags})
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("could not read tasks for tag backfill: %w", err)
+	}
+	return out, nil
+}
+
+// taskWriter binds the prepared statements that keep tasks_meta and
+// task_tags in step inside one transaction. Every write path (Upsert,
+// Bootstrap, project reindex) funnels through it so the row store and the
+// tag mirror can never drift.
+type taskWriter struct {
+	meta, clearTags, addTag *sql.Stmt
+}
+
+func newTaskWriter(tx *sql.Tx) (*taskWriter, error) {
+	w := &taskWriter{}
+	var err error
+	if w.meta, err = tx.Prepare(upsertSQL); err != nil {
+		return nil, fmt.Errorf("could not prepare search index write: %w", err)
+	}
+	if w.clearTags, err = tx.Prepare(clearTagsSQL); err != nil {
+		w.close()
+		return nil, fmt.Errorf("could not prepare search index write: %w", err)
+	}
+	if w.addTag, err = tx.Prepare(insertTagSQL); err != nil {
+		w.close()
+		return nil, fmt.Errorf("could not prepare search index write: %w", err)
+	}
+	return w, nil
+}
+
+func (w *taskWriter) close() {
+	for _, s := range []*sql.Stmt{w.meta, w.clearTags, w.addTag} {
+		if s != nil {
+			_ = s.Close()
+		}
+	}
+}
+
+// put inserts or replaces the task's row and rewrites its tag mirror. The
+// FTS trigger keeps tasks_fts in sync automatically; tags are stored
+// lowercased (Task.Tags is already case-insensitively unique, so lowering
+// cannot collide).
+func (w *taskWriter) put(t storage.Task) error {
 	if t.ID == "" {
 		return errors.New("task has no id")
 	}
-	_, err := i.db.Exec(upsertSQL,
+	if _, err := w.meta.Exec(
 		t.ID, t.ProjectSlug, t.Path, string(t.Status),
-		t.Description, t.Details, t.Created.Unix(), t.Modified.Unix())
-	if err != nil {
+		t.Description, t.Details, t.Created.Unix(), t.Modified.Unix(),
+	); err != nil {
 		return fmt.Errorf("could not index task %s: %w", t.ID, err)
+	}
+	if _, err := w.clearTags.Exec(t.ID); err != nil {
+		return fmt.Errorf("could not index task %s: %w", t.ID, err)
+	}
+	for _, name := range t.Tags() {
+		if _, err := w.addTag.Exec(t.ID, strings.ToLower(name)); err != nil {
+			return fmt.Errorf("could not index task %s: %w", t.ID, err)
+		}
 	}
 	return nil
 }
 
-// Delete removes the row (and its FTS shadow via trigger) for the given
-// ULID. Missing ids are a no-op.
+// Upsert inserts or replaces a row keyed by the task's ULID, refreshing
+// the task_tags mirror in the same transaction.
+func (i *Index) Upsert(t storage.Task) error {
+	tx, err := i.db.Begin()
+	if err != nil {
+		return fmt.Errorf("could not index task %s: %w", t.ID, err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	w, err := newTaskWriter(tx)
+	if err != nil {
+		return err
+	}
+	defer w.close()
+	if err := w.put(t); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// Delete removes the row (its FTS shadow and task_tags rows follow via
+// triggers) for the given ULID. Missing ids are a no-op.
 func (i *Index) Delete(id string) error {
 	if id == "" {
 		return errors.New("missing task id")

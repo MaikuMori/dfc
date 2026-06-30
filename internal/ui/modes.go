@@ -208,41 +208,11 @@ func (m *Model) openProjectSwitcher(focusSlug string) (tea.Cmd, bool) {
 	return m.picker.Init(), true
 }
 
-// updateTagFilter is the modeTagFilter dispatcher. Same multi-picker
-// shape as the tag editor; on commit the chosen tags become the
-// session-only filter applied to the global task list.
-func (m Model) updateTagFilter(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmd tea.Cmd
-	m.picker, cmd = m.picker.Update(msg)
-	if !m.picker.Done() {
-		return m, cmd
-	}
-	if !m.picker.Canceled() {
-		m.tagFilter = m.picker.Selection()
-		m = m.reloadActive()
-	}
-	m.picker = Picker{}
-	m.mode = modeList
-	m.tagFilterBase = nil
-	m.relayout()
-	return m, cmd
-}
-
-// newTagFilterPicker builds the multi-picker that drives the global-view
-// tag filter. Reuses tagPickerItems with the synthetic (untagged) row.
-func newTagFilterPicker(reg *project.Registry, current []string) Picker {
-	items := tagPickerItems(reg, true)
-	picker := NewPicker("filter tags", items)
-	picker.SetMode(modeSelectMany)
-	picker.PreselectMany(current)
-	return picker
-}
-
 // newTagEditPicker builds a many-select picker over reg.AllTags() with
 // the target project's current tag list preselected. Stores the target
 // slug on the Model via tagEditSlug.
 func newTagEditPicker(reg *project.Registry, targetSlug string) Picker {
-	items := tagPickerItems(reg, false)
+	items := tagPickerItems(reg)
 	picker := NewPicker("tags · "+targetSlug, items)
 	picker.SetMode(modeSelectMany)
 	picker.PreselectMany(reg.Tags(targetSlug))
@@ -250,13 +220,11 @@ func newTagEditPicker(reg *project.Registry, targetSlug string) Picker {
 	return picker
 }
 
-// tagPickerItems returns the PickerItems that represent the registry's
-// known tags, sorted by usage desc then name asc. When includeUntagged
-// is true, a synthetic "(untagged)" row is appended (its count is the
-// number of projects with no tags); used by the filter overlay only.
-func tagPickerItems(reg *project.Registry, includeUntagged bool) []PickerItem {
+// tagPickerItems returns the PickerItems for the registry's known tags,
+// sorted by usage desc then name asc. Used by the project tag editor.
+func tagPickerItems(reg *project.Registry) []PickerItem {
 	summaries := reg.AllTags()
-	items := make([]PickerItem, 0, len(summaries)+1)
+	items := make([]PickerItem, 0, len(summaries))
 	for _, s := range summaries {
 		items = append(items, PickerItem{Slug: s.Name, Name: s.Name, Count: len(s.Slugs)})
 	}
@@ -266,12 +234,6 @@ func tagPickerItems(reg *project.Registry, includeUntagged bool) []PickerItem {
 		}
 		return cmp.Compare(a.Name, b.Name)
 	})
-	if includeUntagged {
-		untagged := reg.UntaggedSlugs()
-		if len(untagged) > 0 {
-			items = append(items, PickerItem{Slug: "(untagged)", Name: "(untagged)", Count: len(untagged)})
-		}
-	}
 	return items
 }
 
@@ -316,10 +278,6 @@ func (m Model) updateList(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// list). esc with no filter falls through to Quit.
 	case msg.Code == tea.KeyEsc && m.searchQuery != "":
 		m.searchQuery = ""
-		return m.reloadActive(), nil
-
-	case msg.Code == tea.KeyEsc && m.globalView && len(m.tagFilter) > 0:
-		m.tagFilter = nil
 		return m.reloadActive(), nil
 
 	case key.Matches(msg, keys.Quit):
@@ -373,22 +331,6 @@ func (m Model) updateList(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if m.searchQuery != "" {
 			m = m.runSearch()
 		}
-
-	case key.Matches(msg, keys.Filter):
-		if !m.globalView {
-			m.status = "f only works in global view (press A first)"
-			return m, nil
-		}
-		reg := m.core.Registry()
-		if len(reg.AllTags()) == 0 {
-			m.status = "no tags yet — add some via the project switcher (P → ctrl+t)"
-			return m, nil
-		}
-		m.picker = newTagFilterPicker(reg, m.tagFilter)
-		m.mode = modeTagFilter
-		m.tagFilterBase, _ = m.core.ListAll()
-		m.relayout()
-		return m, m.picker.Init()
 
 	case key.Matches(msg, keys.Sort):
 		m.sortKey = m.sortKey.next()
@@ -575,15 +517,6 @@ func (m Model) updateList(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, keys.Search):
 		m.mode = modeSearch
-		if !m.core.HasIndex() {
-			// Snapshot the corpus once so per-keystroke filtering doesn't
-			// re-read every task from disk while the index is unavailable.
-			if m.globalView {
-				m.searchBase = m.reloadAll().tasks
-			} else {
-				m.searchBase = m.reload().tasks
-			}
-		}
 		m.input.Reset()
 		m.input.Placeholder = "filter"
 		m.input.SetValue(m.searchQuery)
@@ -752,6 +685,5 @@ func (m *Model) exitInput() {
 	// Always drop any pending capture target — picker cancel, capture
 	// cancel, commit success, and commit failure all flow through here.
 	m.capTargetSlug = ""
-	m.searchBase = nil
 	m.relayout()
 }

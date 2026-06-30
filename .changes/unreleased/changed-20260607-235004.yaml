@@ -1,0 +1,3 @@
+kind: changed
+body: The TUI has one filter (`/`) in both views; the global-only tag-filter picker (`f`) is gone — filter by `#tag` instead (project tags are matched too).
+time: 2026-06-07T23:50:04.52706-04:00
