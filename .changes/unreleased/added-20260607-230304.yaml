@@ -1,3 +1,0 @@
-kind: added
-body: 'Filter tasks by tag: `#tag` keeps tasks carrying it, `-#tag` drops them, combinable with text. A task''s tags are its inline `#tags` plus its project tags.'
-time: 2026-06-07T23:03:04.966678-04:00

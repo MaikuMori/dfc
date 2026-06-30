@@ -1,3 +1,0 @@
-kind: fixed
-body: Search no longer errors on hyphenated terms like `oauth2-proxy`
-time: 2026-06-30T15:45:37.815518-04:00

@@ -7,6 +7,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 Release notes are managed via [changie](https://changie.dev). Add an entry with `changie new` rather than editing this file by hand; the file is regenerated on release.
 
 
+## [v0.4.0] - 2026-06-30
+
+### Added
+
+- TUI: press 'm' to move the cursor task to another project.
+- CLI: `dfc mv <id> <project>` (alias `move`) moves a task to another project.
+- CLI: `dfc projects rename`, `set-prefix`, and `merge` manage projects from the command line.
+- CLI: `dfc tags rename <old> <new>` renames a tag across every project (with --merge for conflicts).
+- CLI: `dfc count [--format prompt|json]` reports open/done task counts for shell-prompt and tmux integration.
+- Tasks with `- [ ]` checklists show a `[done/total]` progress badge after the title; the expanded view dims completed items.
+- Filter tasks by tag: `#tag` keeps tasks carrying it, `-#tag` drops them, combinable with text. A task's tags are its inline `#tags` plus its project tags.
+- Inline #tags render as colored pills: collected after the task title in the list (up to 3, then `+N`) and inline in the expanded view. Forms: `#tag`, `#multi word#`, nested `#a/b`, with `\#` to escape.
+- Saved searches: `dfc searches save/list/rm`, expanded by `dfc s @name` / `dfc ss @name` and the TUI `S` picker. Stored in `~/.dfc/searches.json`.
+- The TUI filter footer shows syntax help and a live plain-English reading of the query (`showing: tagged #p3, not #later, matching "mig"`).
+- Manage saved searches in the TUI: `^s` in the filter saves the current query under a name; the `S` picker renames (`^r`) and deletes (`^⇧d`) them.
+
+### Changed
+
+- The TUI has one filter (`/`) in both views; the global-only tag-filter picker (`f`) is gone — filter by `#tag` instead (project tags are matched too).
+- Saved-search names may be free text (spaces allowed); `@name` takes the whole remainder, e.g. `dfc ss "@my tasks"`.
+- A filtered list styles done tasks the same muted way as the full list (the search-only flattened styling is gone).
+
+### Fixed
+
+- Search no longer errors on hyphenated terms like `oauth2-proxy`
 ## [v0.3.0] - 2026-05-31
 
 ### Added
