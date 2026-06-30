@@ -11,6 +11,7 @@ type CLI struct {
 	Ls         LsCmd            `cmd:"" aliases:"list" help:"List tasks (cwd project by default)."`
 	Search     SearchCmd        `cmd:"" aliases:"s" help:"Full-text search in the current project (or -p/-a to override)."`
 	Ss         SsCmd            `cmd:"" help:"Full-text search across every project."`
+	Searches   SearchesCmd      `cmd:"" help:"Manage saved searches (save / list / rm)."`
 	Show       ShowCmd          `cmd:"" help:"Show a single task by full ULID."`
 	Count      CountCmd         `cmd:"" help:"Report task counts (for shell-prompt / tmux integration)."`
 	Done       DoneCmd          `cmd:"" help:"Mark a task done."`

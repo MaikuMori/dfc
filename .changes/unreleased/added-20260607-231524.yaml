@@ -1,0 +1,3 @@
+kind: added
+body: 'Saved searches: `dfc searches save/list/rm`, expanded by `dfc s @name` / `dfc ss @name` and the TUI `S` picker. Stored in `~/.dfc/searches.json`.'
+time: 2026-06-07T23:15:24.575624-04:00

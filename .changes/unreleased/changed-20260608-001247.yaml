@@ -1,0 +1,3 @@
+kind: changed
+body: Saved-search names may be free text (spaces allowed); `@name` takes the whole remainder, e.g. `dfc ss "@my tasks"`.
+time: 2026-06-08T00:12:47.809092-04:00

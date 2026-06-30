@@ -37,6 +37,8 @@ type keyMap struct {
 	SearchClear      key.Binding
 	Switch           key.Binding
 	Sort             key.Binding
+	SavedSearch      key.Binding
+	SaveSearch       key.Binding
 	PickerEditTags   key.Binding
 	PickerToggleTag  key.Binding
 	PickerNewTag     key.Binding
@@ -77,13 +79,15 @@ var keys = keyMap{
 
 	Switch:          key.NewBinding(key.WithKeys("P"), key.WithHelp("P", "switch")),
 	Sort:            key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "sort: modified/created")),
+	SavedSearch:     key.NewBinding(key.WithKeys("S"), key.WithHelp("S", "saved searches")),
+	SaveSearch:      key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("^s", "save search")),
 	PickerEditTags:  key.NewBinding(key.WithKeys("ctrl+t"), key.WithHelp("^t", "edit tags")),
 	PickerToggleTag: key.NewBinding(key.WithKeys(" "), key.WithHelp("␣", "toggle")),
 	PickerNewTag:    key.NewBinding(key.WithKeys("ctrl+n"), key.WithHelp("^n", "new tag")),
 	PickerClearTags: key.NewBinding(key.WithKeys("ctrl+l"), key.WithHelp("^l", "clear")),
 	PickerRename:    key.NewBinding(key.WithKeys("ctrl+r"), key.WithHelp("^r", "rename")),
 	PickerSetPrefix: key.NewBinding(key.WithKeys("ctrl+p"), key.WithHelp("^p", "set prefix")),
-	PickerDelete:    key.NewBinding(key.WithKeys("ctrl+shift+d"), key.WithHelp("^⇧d", "delete project")),
+	PickerDelete:    key.NewBinding(key.WithKeys("ctrl+shift+d"), key.WithHelp("^⇧d", "delete")),
 	Global:          key.NewBinding(key.WithKeys("A"), key.WithHelp("A", "all")),
 
 	Help:    key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
@@ -104,7 +108,7 @@ func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.PageUp, k.PageDn, k.Top, k.Bottom, k.Expand},
 		{k.Capture, k.NewlineInCapture, k.Edit, k.EditExt, k.Move, k.Toggle, k.Delete, k.Undo, k.Yank, k.YankPath},
-		{k.Search, k.SearchCommit, k.SearchClear},
+		{k.Search, k.SearchCommit, k.SearchClear, k.SavedSearch},
 		{k.Switch, k.PickerRename, k.PickerSetPrefix, k.PickerDelete, k.Global, k.Sort},
 		{k.Help, k.Quit},
 	}
@@ -118,12 +122,16 @@ func (k keyMap) InputHints() []key.Binding {
 	return []key.Binding{k.Confirm, k.Cancel}
 }
 
+func (k keyMap) SavedSearchHints() []key.Binding {
+	return []key.Binding{k.Confirm, k.PickerRename, k.PickerDelete, k.Cancel}
+}
+
 func (k keyMap) CaptureHints() []key.Binding {
 	return []key.Binding{k.Confirm, k.NewlineInCapture, k.Cancel}
 }
 
 func (k keyMap) SearchHints() []key.Binding {
-	return []key.Binding{k.SearchCommit, k.SearchClear}
+	return []key.Binding{k.SearchCommit, k.SaveSearch, k.SearchClear}
 }
 
 func (k keyMap) FilterHints() []key.Binding {

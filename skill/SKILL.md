@@ -102,6 +102,25 @@ dfc ss <query>... [-p <slug-or-name>]      [--tag <name>]... [--status ...] [-n 
 
 Human output groups by project when hits span >1 project. Description is bolded with `<mark>...</mark>` highlights replaced by ANSI inversion on TTY. ID rides on the last description line as a dim `[01KRJF7R2R]` (10-char ULID prefix — copy the full one from `--json`).
 
+A query of `@name` expands a [saved search](#dfc-searches--saved-searches) into its stored query, e.g. `dfc ss @stale`. Names may be free text, so the whole remainder after `@` is the name: `dfc ss "@my important tasks"`.
+
+### `dfc searches` — saved searches
+
+```
+dfc searches [list]                  [--json]   # list (default)
+dfc searches save <name> <query>...  [--force] [--json]
+dfc searches rm   <name>                       [--json]
+```
+
+Named query strings persisted in `~/.dfc/searches.json`, expanded by `dfc s @name` / `dfc ss @name` (and the TUI `S` picker). The query is text plus `#tag` / `-#tag` predicates; names may be free text (quote a multi-word name). `save` refuses to clobber an existing name without `--force`. Example:
+
+```
+dfc searches save "stale work" "#p3 -#later"
+dfc ss "@stale work"
+```
+
+In the TUI: `/` to build a filter, `^s` to save it under a name; `S` opens the picker to apply (`↵`), rename (`^r`), or delete (`^⇧d`) a saved search.
+
 ### `dfc show <26-char ULID>` — print one task
 
 ```
@@ -288,6 +307,7 @@ Bubbletea TUI. Requires a TTY. Press `?` inside for a key reference. Not invoked
 - `~/.dfc/projects/<slug>/<10-char-ts>-<desc-slug>.md` — one file per task.
 - `~/.dfc/projects.json` — project registry (name, prefix, tags, last_used).
 - `~/.dfc/index.db` — SQLite FTS5 search index (write-through, rebuildable via `--reindex`).
+- `~/.dfc/searches.json` — saved searches (name → query string), managed by `dfc searches`.
 - `~/.dfc/trash/<ulid>/` — soft-deleted tasks and projects, swept on a TTL.
 - Override the root with `DFC_ROOT=/path` (tests, scratch environments).
 

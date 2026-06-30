@@ -1,12 +1,13 @@
 package ui
 
 import (
+	"github.com/MaikuMori/dfc/internal/savedsearch"
 	"github.com/MaikuMori/dfc/internal/storage"
 )
 
-// refreshWatches computes the desired watch set (registry file + current
-// project dir + all other project dirs in global view), then applies the
-// diff against the watcher's current set.
+// refreshWatches computes the desired watch set (registry file + searches.json
+// + current project dir + all other project dirs in global view), then applies
+// the diff against the watcher's current set.
 func (m *Model) refreshWatches() error {
 	if m.watcher == nil {
 		return nil
@@ -14,6 +15,9 @@ func (m *Model) refreshWatches() error {
 	desired := map[string]bool{}
 	if regPath := storage.RegistryPath(); regPath != "" {
 		desired[regPath] = true
+	}
+	if ssPath := savedsearch.Path(); ssPath != "" {
+		desired[ssPath] = true
 	}
 	if m.store != nil {
 		desired[m.store.Dir()] = true
@@ -234,12 +238,12 @@ func (m *Model) relayout() {
 		// Always size to current screen width so wrap math is accurate.
 		m.capArea.SetWidth(m.width)
 		listHeight -= captureAreaHeight(&m.capArea)
-	case modeEdit, modeSearch:
+	case modeEdit, modeSearch, modeSaveSearchName:
 		listHeight -= inputHeight
 		if w := m.width - 2; w > 0 {
 			m.input.SetWidth(w)
 		}
-	case modeSwitch, modeCaptureTarget, modeMoveTarget, modeTagEdit, modeHelp:
+	case modeSwitch, modeCaptureTarget, modeMoveTarget, modeTagEdit, modeSavedSearch, modeHelp:
 		// Picker or help takes over the body; viewport doesn't need to be
 		// sized to anything sensible.
 		listHeight = 0
@@ -264,7 +268,7 @@ func (m *Model) relayout() {
 // screen. modeHelp also takes over the body but has no picker to size.
 func (m Model) isPickerMode() bool {
 	switch m.mode {
-	case modeSwitch, modeCaptureTarget, modeMoveTarget, modeTagEdit:
+	case modeSwitch, modeCaptureTarget, modeMoveTarget, modeTagEdit, modeSavedSearch:
 		return true
 	}
 	return false

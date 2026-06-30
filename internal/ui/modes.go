@@ -176,6 +176,83 @@ func (m *Model) updateTagEdit(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// openSavedSearchPicker opens a single-select picker over the saved searches.
+// Selecting one applies its stored query like `/`; the query shows in the
+// bracket slot. No-op with a hint when there are none.
+func (m Model) openSavedSearchPicker() (tea.Model, tea.Cmd) {
+	ss, err := m.core.SavedSearches()
+	if err != nil {
+		m.err = err
+		return m, nil
+	}
+	entries := ss.List()
+	if len(entries) == 0 {
+		m.status = "no saved searches — type a filter (/) and press ^s to save one"
+		return m, nil
+	}
+	items := make([]PickerItem, len(entries))
+	for i, e := range entries {
+		items[i] = PickerItem{Slug: e.Name, Name: e.Name, Prefix: e.Query}
+	}
+	p := NewPicker("saved search:", items)
+	p.RenameUpdatesSlug = true
+	p.OnRename = func(old, newName string) error {
+		newName = strings.TrimSpace(newName)
+		if newName == old {
+			return nil
+		}
+		if _, exists := ss.Get(newName); exists {
+			return fmt.Errorf("saved search %q already exists", newName)
+		}
+		query, ok := ss.Get(old)
+		if !ok {
+			return fmt.Errorf("saved search %q not found", old)
+		}
+		if err := ss.Set(newName, query); err != nil {
+			return err
+		}
+		_, err := ss.Remove(old)
+		return err
+	}
+	p.OnDelete = func(name string) error {
+		_, err := ss.Remove(name)
+		return err
+	}
+	m.picker = p
+	m.mode = modeSavedSearch
+	m.relayout()
+	return m, m.picker.Init()
+}
+
+// updateSavedSearch is the modeSavedSearch dispatcher: picking a saved search
+// applies its stored query as the active filter (footer shows it; esc clears
+// it like any other filter). Cancel returns to the list untouched.
+func (m Model) updateSavedSearch(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	m.picker, cmd = m.picker.Update(msg)
+	if !m.picker.Done() {
+		return m, cmd
+	}
+	name := m.picker.Selected()
+	canceled := m.picker.Canceled() || name == ""
+	m.picker = Picker{}
+	m.mode = modeList
+	if canceled {
+		m.relayout()
+		return m, cmd
+	}
+	if ss, err := m.core.SavedSearches(); err != nil {
+		m.err = err
+	} else if query, ok := ss.Get(name); ok {
+		// Setting searchQuery is enough: reloadActive applies it, the footer
+		// shows it, and `/` seeds its input from it for further editing.
+		m.searchQuery = query
+		m = m.reloadActive()
+	}
+	m.relayout()
+	return m, cmd
+}
+
 // openProjectSwitcher builds (or rebuilds) the modeSwitch picker. When
 // focusSlug is non-empty, the cursor parks on that slug so callers
 // returning from a sub-modal (tag editor) don't lose the user's place.
@@ -331,6 +408,9 @@ func (m Model) updateList(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if m.searchQuery != "" {
 			m = m.runSearch()
 		}
+
+	case key.Matches(msg, keys.SavedSearch):
+		return m.openSavedSearchPicker()
 
 	case key.Matches(msg, keys.Sort):
 		m.sortKey = m.sortKey.next()
@@ -547,12 +627,86 @@ func (m Model) updateSearch(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.input.Placeholder = "task description"
 		return m, nil
 	}
+	if key.Matches(msg, keys.SaveSearch) {
+		if strings.TrimSpace(m.input.Value()) == "" {
+			return m, nil // nothing typed to save
+		}
+		// Hold the query while the input collects a (free-text) name.
+		m.searchQuery = m.input.Value()
+		m.input.Reset()
+		m.input.Placeholder = "name this search"
+		m.input.Focus()
+		m.mode = modeSaveSearchName
+		m.relayout()
+		return m, nil
+	}
 	var cmd tea.Cmd
 	prev := m.input.Value()
 	m.input, cmd = m.input.Update(msg)
 	if m.input.Value() != prev {
 		m.searchQuery = m.input.Value()
 		m = m.runSearch()
+	}
+	return m, cmd
+}
+
+// updateSaveSearchName collects a free-text name and saves the active query
+// (held in m.searchQuery) as a named search. Enter saves and returns to the
+// list with the filter still applied; esc returns to the search input.
+func (m Model) updateSaveSearchName(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	if msg.String() == "ctrl+c" {
+		return m, tea.Quit
+	}
+	if msg.Code == tea.KeyEsc {
+		if m.pendingOverwrite != "" {
+			// Back out of the overwrite prompt to keep editing the name.
+			m.pendingOverwrite = ""
+			m.status = ""
+			return m, nil
+		}
+		m.input.SetValue(m.searchQuery)
+		m.input.CursorEnd()
+		m.input.Placeholder = "filter"
+		m.mode = modeSearch
+		m.relayout()
+		return m, nil
+	}
+	if isEnter(msg) {
+		name := strings.TrimSpace(m.input.Value())
+		if name == "" {
+			return m, nil
+		}
+		ss, err := m.core.SavedSearches()
+		if err != nil {
+			m.err = err
+			m.pendingOverwrite = ""
+			m.exitInput()
+			m.input.Placeholder = "task description"
+			return m.reloadActive(), nil
+		}
+		// Confirm before clobbering an existing saved search of the same name.
+		if _, exists := ss.Get(name); exists && m.pendingOverwrite != name {
+			m.pendingOverwrite = name
+			m.status = "“" + name + "” exists — enter to overwrite, esc to rename"
+			return m, nil
+		}
+		if err := ss.Set(name, m.searchQuery); err != nil {
+			m.err = err
+		} else {
+			m.status = "saved “" + name + "”"
+		}
+		m.pendingOverwrite = ""
+		m.exitInput()
+		m.input.Placeholder = "task description"
+		return m.reloadActive(), nil
+	}
+	prev := m.input.Value()
+	var cmd tea.Cmd
+	m.input, cmd = m.input.Update(msg)
+	if m.input.Value() != prev {
+		// Editing the name invalidates a pending overwrite confirmation.
+		m.pendingOverwrite = ""
+		m.status = ""
 	}
 	return m, cmd
 }
@@ -685,5 +839,6 @@ func (m *Model) exitInput() {
 	// Always drop any pending capture target — picker cancel, capture
 	// cancel, commit success, and commit failure all flow through here.
 	m.capTargetSlug = ""
+	m.pendingOverwrite = ""
 	m.relayout()
 }

@@ -22,9 +22,11 @@ const (
 	modeEdit
 	modeSearch
 	modeSwitch
-	modeCaptureTarget // picker that chooses a project to capture into (global view only)
-	modeMoveTarget    // picker that chooses a project to move the cursor task into
-	modeTagEdit       // multi-select picker that edits a project's categorical tags
+	modeCaptureTarget  // picker that chooses a project to capture into (global view only)
+	modeMoveTarget     // picker that chooses a project to move the cursor task into
+	modeTagEdit        // multi-select picker that edits a project's categorical tags
+	modeSavedSearch    // single-select picker over saved searches; selecting applies the query
+	modeSaveSearchName // name prompt for saving the active query as a saved search
 	modeHelp
 )
 
@@ -64,6 +66,9 @@ type Model struct {
 	searchQuery   string // active filter; "" = no filter
 	sortKey       sortKey
 	tagEditSlug   string // set transiently while modeTagEdit is running
+	// pendingOverwrite is the saved-search name awaiting overwrite confirmation
+	// in modeSaveSearchName; "" = none.
+	pendingOverwrite string
 }
 
 // New constructs a Model bound to the given Core, project slug, store
@@ -132,6 +137,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case fsChangedMsg:
 		prevSlugs := slugSetSnapshot(m.core.Registry())
 		_ = m.core.ReloadRegistry()
+		// searches.json is watched too: drop the cached store so an active
+		// `@name` query and the saved-search picker see external edits.
+		m.core.InvalidateSavedSearches()
 		// If a project appeared/disappeared since the last event and we're
 		// in global view, extend / contract the watch set.
 		if m.globalView && !equalStringSets(prevSlugs, slugSetSnapshot(m.core.Registry())) {
@@ -167,7 +175,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.relayout()
 			}
 			return m, cmd
-		case modeEdit, modeSearch:
+		case modeEdit, modeSearch, modeSaveSearchName:
 			var cmd tea.Cmd
 			prev := m.input.Value()
 			m.input, cmd = m.input.Update(msg)
@@ -187,6 +195,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateInput(msg)
 		case modeSearch:
 			return m.updateSearch(msg)
+		case modeSaveSearchName:
+			return m.updateSaveSearchName(msg)
 		case modeSwitch:
 			return m.updateSwitch(msg)
 		case modeCaptureTarget:
@@ -195,6 +205,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateMoveTarget(msg)
 		case modeTagEdit:
 			return m.updateTagEdit(msg)
+		case modeSavedSearch:
+			return m.updateSavedSearch(msg)
 		case modeHelp:
 			return m.updateHelp(msg)
 		}
@@ -238,6 +250,8 @@ func (m Model) View() tea.View {
 			hintText = joinBindings(keys.MoveTargetHints())
 		case m.mode == modeTagEdit:
 			hintText = joinBindings(keys.TagEditHints())
+		case m.mode == modeSavedSearch:
+			hintText = joinBindings(keys.SavedSearchHints())
 		}
 		hint := styleHint.Render(hintText)
 		block := pickerView + "\n" + hint
@@ -278,7 +292,7 @@ func (m Model) View() tea.View {
 	case modeCapture:
 		b.WriteString(m.capArea.View())
 		b.WriteByte('\n')
-	case modeEdit, modeSearch:
+	case modeEdit, modeSearch, modeSaveSearchName:
 		b.WriteString(m.input.View())
 		b.WriteByte('\n')
 	}

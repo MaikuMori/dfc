@@ -101,6 +101,11 @@ type Picker struct {
 
 	OnRename    func(slug, name string) error
 	OnSetPrefix func(slug, prefix string) error
+	// RenameUpdatesSlug makes a rename also replace the row's Slug with the new
+	// value. Off by default (projects keep a stable slug while their display
+	// name changes); on for items whose name IS their identity, like saved
+	// searches, so selecting a just-renamed row resolves to the new key.
+	RenameUpdatesSlug bool
 	// EnableTagEdit lets ctrl+t in single-mode exit the picker with
 	// WantTagEditSlug set to the highlighted row. Callers wire this when
 	// they want to open a follow-up tag editor for the chosen project;
@@ -401,6 +406,10 @@ func (p Picker) updateEdit(msg tea.Msg) (Picker, tea.Cmd) {
 					}
 				}
 				p.items[p.editIdx].Name = value
+				if p.RenameUpdatesSlug {
+					p.items[p.editIdx].Slug = value
+					slug = value
+				}
 				p.haystack[p.editIdx] = value + "\t" + slug
 			case editPrefix:
 				// Empty prefix is meaningful — reverts to default; allow it.
