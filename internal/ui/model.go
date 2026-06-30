@@ -221,6 +221,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) View() tea.View {
 	var v tea.View
 	v.AltScreen = true
+	v.WindowTitle = m.windowTitle()
 	if m.width == 0 || m.height == 0 {
 		return v
 	}
@@ -306,11 +307,26 @@ func (m Model) header() string {
 	if m.globalView {
 		return styleHeader.Render(fmt.Sprintf("all (%d)", len(m.tasks)))
 	}
-	name := m.slug
-	if m.core != nil {
-		name = m.core.Registry().Name(m.slug)
+	return styleHeader.Render(m.projectLabel())
+}
+
+// projectLabel is the bare current-scope name: the registry display name in
+// per-project view, "all" in global view. Shared by the header and the
+// terminal window title so the two can't drift.
+func (m Model) projectLabel() string {
+	if m.globalView {
+		return "all"
 	}
-	return styleHeader.Render(name)
+	if m.core != nil {
+		return m.core.Registry().Name(m.slug)
+	}
+	return m.slug
+}
+
+// windowTitle is the OSC-2 terminal title: project name first so it's the
+// leftmost, most-truncation-resistant part of a crowded tab strip.
+func (m Model) windowTitle() string {
+	return m.projectLabel() + " — dfc"
 }
 
 func (m Model) footer() string {
