@@ -390,6 +390,12 @@ func (m Model) updateList(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			t.Status = storage.StatusOpen
 		} else {
 			t.Status = storage.StatusDone
+			// A finished task collapses back to a single row; its
+			// details no longer earn the expanded space.
+			if m.expandedID == t.ID && (!m.globalView || m.expandedSlug == t.ProjectSlug) {
+				m.expandedID = ""
+				m.expandedSlug = ""
+			}
 		}
 		if err := m.core.SaveTask(&t); err != nil {
 			m.err = err
