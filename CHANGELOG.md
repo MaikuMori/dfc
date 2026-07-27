@@ -7,6 +7,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 Release notes are managed via [changie](https://changie.dev). Add an entry with `changie new` rather than editing this file by hand; the file is regenerated on release.
 
 
+## [v0.5.0] - 2026-07-24
+
+### Added
+
+- TUI sets the terminal window title to the current project name.
+
+### Fixed
+
+- Marking a task done collapses it if it was expanded.
 ## [v0.4.0] - 2026-06-30
 
 ### Added
