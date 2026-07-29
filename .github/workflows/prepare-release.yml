@@ -35,7 +35,7 @@ jobs:
       - name: Compute next version
         if: steps.check.outputs.has_changes == 'true'
         id: changie-next
-        uses: miniscruff/changie-action@11bcad388e7973948cbcecb10863baf024d5f607  # v3
+        uses: miniscruff/changie-action@3223cb29b92a0972dedc864ace3da01e04780ae4  # v3
         with:
           version: latest
           args: next auto
@@ -49,14 +49,14 @@ jobs:
 
       - name: Batch unreleased changesets into the next version
         if: steps.check.outputs.has_changes == 'true'
-        uses: miniscruff/changie-action@11bcad388e7973948cbcecb10863baf024d5f607  # v3
+        uses: miniscruff/changie-action@3223cb29b92a0972dedc864ace3da01e04780ae4  # v3
         with:
           version: latest
           args: batch ${{ steps.changie-next.outputs.output }}
 
       - name: Merge CHANGELOG.md
         if: steps.check.outputs.has_changes == 'true'
-        uses: miniscruff/changie-action@11bcad388e7973948cbcecb10863baf024d5f607  # v3
+        uses: miniscruff/changie-action@3223cb29b92a0972dedc864ace3da01e04780ae4  # v3
         with:
           version: latest
           args: merge
