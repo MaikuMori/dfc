@@ -64,6 +64,17 @@ Open against `master`. `just check` must pass locally; CI runs lint, tests on Li
 
 The dependency layering is enforced by `depguard` rules in `.golangci.yml`. Don't fight them — they encode the architecture.
 
+## Storage layout
+
+```text
+~/.dfc/
+├── projects/<slug>/<10-char-ts>-<desc>.md  # tasks: YAML frontmatter + markdown body
+├── projects.json                           # registry: slug → name, prefix, tags, last_used
+├── searches.json                           # saved searches (name → query)
+├── index.db                                # SQLite FTS5 mirror for search
+└── trash/<ulid>/                           # soft-deleted tasks (undo with `dfc undo`)
+```
+
 ## License
 
 By contributing, you agree that your contributions are licensed under the [MIT License](LICENSE).

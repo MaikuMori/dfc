@@ -122,7 +122,7 @@ Type "clear"
 Enter
 Sleep 400ms
 
-Type "# agents use the same CLI with --json"
+Type "# minions use the same CLI with --json"
 Sleep 1.2s
 Enter
 Sleep 1s

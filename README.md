@@ -1,6 +1,6 @@
 # dfc, don't forget cli
 
-> Quick-capture task CLI and TUI.
+> Quick-capture task CLI & TUI for you and your minions.
 
 [![CI](https://github.com/MaikuMori/dfc/actions/workflows/ci.yml/badge.svg)](https://github.com/MaikuMori/dfc/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/MaikuMori/dfc)](https://github.com/MaikuMori/dfc/releases/latest)
@@ -11,31 +11,7 @@
   <img src="docs/assets/demo.gif" alt="demo" width="1200">
 </p>
 
-`dfc` is a small, fast task tracker that lives on your disk. Tasks are plain markdown files under `~/.dfc/projects/<slug>/`. A TUI gives you a fuzzy picker, search, and a global view across every project; a CLI gives shells and agents the same surface area.
-
-## Why
-
-When you're:
-
-- juggling 10 projects,
-- in a meeting,
-- or actively doing something else,
-
-`dfc` lets you capture tasks quickly without interrupting your workflow.
-
-`dfc` is not a replacement for a dedicated task management system; it's a quick-capture tool so you don't forget. You can also use it as external todo list for agents that can work across projects.
-
-Key features:
-
-- **Files on disk.** No database lock-in, no cloud, no account. Open the markdown in any editor.
-- **Project-aware.** Tasks are grouped into projects by directory. Projects are auto-detected from your current working directory.
-- **Power-user-first.** One or two keystrokes to any action.
-- **Tags & checklists.** Inline `#tags` filter and search across projects; `- [ ]` checklists get a `[done/total]` badge.
-- **Agent-friendly.** Every CLI command supports `--json`. An agent skill manifest lives in [`skill/SKILL.md`](skill/SKILL.md).
-
-## Why not x?
-
-Probably because either `x` does too much or is not fast enough to invoke. Also I want project grouping to just work without having to think about it.
+`dfc` is a small, fast task tracker that lives on your disk. Tasks are plain markdown files under `~/.dfc/projects/<slug>/`.
 
 ## Install
 
@@ -51,11 +27,11 @@ cd dfc
 just install
 ```
 
-### Agent skill
+### Minion skill
 
 The skill manifest lives at [`skill/SKILL.md`](skill/SKILL.md). Three install paths, pick whichever fits:
 
-**1. Point your agent at the GitHub URL.** Most agents (Claude Code, Cursor, …) can fetch + persist a remote file. Prompt with:
+**1. Point your minion at the GitHub URL.** Most minions (Claude Code, Codex, …) can fetch + persist a remote file. Prompt with:
 
 > Install the dfc skill from `https://raw.githubusercontent.com/MaikuMori/dfc/master/skill/SKILL.md` into your skills directory.
 
@@ -96,6 +72,30 @@ dfc done 01J9X7K3M8VQNH4Z7Y3PG2T5BD
 
 Full command reference: `dfc --help`.
 
+## Why
+
+When you're:
+
+- juggling 10 projects,
+- in a meeting,
+- or actively doing something else,
+
+`dfc` lets you capture tasks quickly without interrupting your workflow.
+
+`dfc` doesn't try to replace a real task manager — it's the inbox in front of one, so ideas survive until you deal with them. It also doubles as an external todo list for minions that work across projects.
+
+Key features:
+
+- **Files on disk.** No database lock-in, no cloud, no account. Open the markdown in any editor.
+- **Project-aware.** Tasks are grouped into projects by directory. Projects are auto-detected from your current working directory.
+- **Power-user-first.** One or two keystrokes to any action.
+- **Tags & checklists.** Inline `#tags` filter and search across projects; `- [ ]` checklists get a `[done/total]` badge.
+- **Minion-friendly.** Every CLI command supports `--json`. A skill manifest for your minions lives in [`skill/SKILL.md`](skill/SKILL.md).
+
+## Why not x?
+
+Probably because either `x` does too much or is not fast enough to invoke. Also I want project grouping to just work without having to think about it.
+
 ## Shell completion
 
 ```sh
@@ -124,26 +124,15 @@ style = "bold yellow"
 
 `--format json` (`{open, done, done_today, by_tag}`) feeds fancier prompts and tmux status lines; bare `dfc count` is human-readable. Add `-a` to count every project instead of the cwd one.
 
-## Storage
-
-```text
-~/.dfc/
-├── projects/<slug>/<10-char-ts>-<desc>.md  # tasks: YAML frontmatter + markdown body
-├── projects.json                           # registry: slug → name, prefix, tags, last_used
-├── searches.json                           # saved searches (name → query)
-├── index.db                                # SQLite FTS5 mirror for search
-└── trash/<ulid>/                           # soft-deleted tasks (undo with `dfc undo`)
-```
-
 ## Documentation
 
-- [`skill/SKILL.md`](skill/SKILL.md) — teaches agents to use the CLI.
-- [`CONTRIBUTING.md`](CONTRIBUTING.md) — local dev setup, changeset workflow, code layout.
+- [`skill/SKILL.md`](skill/SKILL.md) — teaches minions to use the CLI.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — local dev setup, changeset workflow, code + storage layout.
 - [`CHANGELOG.md`](CHANGELOG.md) — release notes.
 
-## AI Policy
+## AI policy
 
-AI is a tool. If I buy a house, I don't care if you used a golden hammer or a stone as long as it is done well. If all the screws are hammered in and everything is polished with an axe obviously something is wrong. Use whatever tools you're comfortable with as long as the end result is of good quality.
+AI is a tool. If I buy a house, I don't care whether the builder used a golden hammer or a stone — as long as it's built well. If the screws are hammered in and the trim is polished with an axe, obviously something went wrong. Same for contributions: use whatever tools you're comfortable with, but you own the result — understand what you're submitting and make sure it holds up. PRs that read like nobody checked them will be closed.
 
 ## License
 
