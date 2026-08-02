@@ -1,0 +1,3 @@
+kind: fixed
+body: '`dfc --version` reports the module version when installed via `go install`, and the git revision for source builds.'
+time: 2026-08-02T18:56:57.652865+02:00
