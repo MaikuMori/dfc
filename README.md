@@ -2,6 +2,11 @@
 
 > Quick-capture task CLI and TUI.
 
+[![CI](https://github.com/MaikuMori/dfc/actions/workflows/ci.yml/badge.svg)](https://github.com/MaikuMori/dfc/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/MaikuMori/dfc)](https://github.com/MaikuMori/dfc/releases/latest)
+[![Go Report Card](https://goreportcard.com/badge/github.com/MaikuMori/dfc)](https://goreportcard.com/report/github.com/MaikuMori/dfc)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 <p align="center">
   <img src="docs/assets/demo.gif" alt="demo" width="1200">
 </p>
@@ -12,11 +17,11 @@
 
 When you're:
 
-- juggling 10 projects;
-- your're in a meeting;
-- or actively doing something else;
+- juggling 10 projects,
+- in a meeting,
+- or actively doing something else,
 
- `dfc` lets you capture tasks quickly without interrupting your workflow.
+`dfc` lets you capture tasks quickly without interrupting your workflow.
 
 `dfc` is not a replacement for a dedicated task management system; it's a quick-capture tool so you don't forget. You can also use it as external todo list for agents that can work across projects.
 
@@ -25,6 +30,7 @@ Key features:
 - **Files on disk.** No database lock-in, no cloud, no account. Open the markdown in any editor.
 - **Project-aware.** Tasks are grouped into projects by directory. Projects are auto-detected from your current working directory.
 - **Power-user-first.** One or two keystrokes to any action.
+- **Tags & checklists.** Inline `#tags` filter and search across projects; `- [ ]` checklists get a `[done/total]` badge.
 - **Agent-friendly.** Every CLI command supports `--json`. An agent skill manifest lives in [`skill/SKILL.md`](skill/SKILL.md).
 
 ## Why not x?
@@ -122,10 +128,11 @@ style = "bold yellow"
 
 ```text
 ~/.dfc/
-├── projects/<slug>/<ulid>-<desc>.md    # tasks: YAML frontmatter + markdown body
-├── projects.json                       # registry: slug → name, tag, last_used
-├── index.db                            # SQLite FTS5 mirror for search
-└── trash/<ulid>/                       # soft-deleted tasks (undo with `dfc undo`)
+├── projects/<slug>/<10-char-ts>-<desc>.md  # tasks: YAML frontmatter + markdown body
+├── projects.json                           # registry: slug → name, prefix, tags, last_used
+├── searches.json                           # saved searches (name → query)
+├── index.db                                # SQLite FTS5 mirror for search
+└── trash/<ulid>/                           # soft-deleted tasks (undo with `dfc undo`)
 ```
 
 ## Documentation

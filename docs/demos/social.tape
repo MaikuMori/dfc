@@ -23,14 +23,14 @@ Sleep 200ms
 Type "dfc c 'stop the daily cron from emailing the ex-intern'"
 Enter
 Sleep 250ms
-Type "dfc c 'name the variable that is just called data'"
+Type "dfc c 'name the variable that is just called data #naming'"
 Enter
 Sleep 250ms
 Type `dfc c "untangle the mock that mocks the mock"`
 Enter
 Sleep 250ms
 # Detailed task last → newest → cursor lands on it after the TUI opens.
-Type `dfc c "the rate limiter is rate-limiting itself" -d "$(cat /tmp/body.md)"`
+Type `dfc c "the rate limiter is rate-limiting itself #p1" -d "$(cat /tmp/body.md)"`
 Enter
 Sleep 100ms
 

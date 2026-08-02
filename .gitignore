@@ -1,6 +1,8 @@
 # Per-user agent notes
 CLAUDE.md
 AGENTS.md
+.claude/
+.gstack/
 
 # Build artifacts
 /dfc

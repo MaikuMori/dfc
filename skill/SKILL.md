@@ -7,6 +7,8 @@ description: Quick-capture task CLI for projects. Use whenever the user mentions
 
 Quick-capture task CLI. Project scope is auto-derived from the current working directory (git remote → git toplevel → cwd path) and can always be overridden with `-p <slug>` or `-a` (all projects).
 
+**dfc is the user's personal tracker.** Never mention dfc, its task IDs, or `~/.dfc` paths in commit messages, PR titles or descriptions, code, or comments of the project you're working on, unless explicitly asked.
+
 Use it when the user asks to:
 - jot down a task ("remind me to ...", "add a todo", "track that I need to ...")
 - list, search, or filter tasks

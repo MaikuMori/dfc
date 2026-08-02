@@ -43,7 +43,7 @@ Sleep 1.6s
 Type "cd /tmp/acme-web"
 Enter
 Sleep 800ms
-Type "dfc c 'make the cookie banner slightly less beige'"
+Type "dfc c 'make the cookie banner slightly less beige #design'"
 Sleep 300ms
 Enter
 Sleep 1.4s
@@ -64,7 +64,7 @@ Sleep 1.6s
 
 # Hidden: stash the detailed task into acme-api (its rich body shines on Tab-expand).
 Hide
-Type `dfc c "the rate limiter is rate-limiting itself" -d "$(cat /tmp/body.md)" -p acme-api`
+Type `dfc c "the rate limiter is rate-limiting itself #p1" -d "$(cat /tmp/body.md)" -p acme-api`
 Enter
 Sleep 200ms
 Type "cd /tmp/acme-api && clear"
