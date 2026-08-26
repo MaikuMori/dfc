@@ -3,13 +3,13 @@ module github.com/MaikuMori/dfc
 go 1.26.3
 
 require (
-	charm.land/bubbles/v2 v2.1.1
-	charm.land/bubbletea/v2 v2.0.8
+	charm.land/bubbles/v2 v2.2.0
+	charm.land/bubbletea/v2 v2.0.9
 	charm.land/glamour/v2 v2.0.1
 	charm.land/lipgloss/v2 v2.0.6
 	github.com/alecthomas/kong v1.16.1
 	github.com/fsnotify/fsnotify v1.10.1
-	github.com/mattn/go-runewidth v0.0.27
+	github.com/mattn/go-runewidth v0.0.28
 	github.com/muesli/reflow v0.3.0
 	github.com/oklog/ulid/v2 v2.1.2
 	github.com/posener/complete v1.2.3
@@ -19,7 +19,7 @@ require (
 	golang.org/x/sys v0.47.0
 	golang.org/x/term v0.45.0
 	gopkg.in/yaml.v3 v3.0.1
-	modernc.org/sqlite v1.56.0
+	modernc.org/sqlite v1.57.0
 )
 
 require (
