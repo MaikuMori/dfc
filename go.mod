@@ -3,23 +3,23 @@ module github.com/MaikuMori/dfc
 go 1.26.3
 
 require (
-	charm.land/bubbles/v2 v2.1.1
-	charm.land/bubbletea/v2 v2.0.8
+	charm.land/bubbles/v2 v2.2.1
+	charm.land/bubbletea/v2 v2.0.9
 	charm.land/glamour/v2 v2.0.1
 	charm.land/lipgloss/v2 v2.0.6
 	github.com/alecthomas/kong v1.16.1
 	github.com/fsnotify/fsnotify v1.10.1
-	github.com/mattn/go-runewidth v0.0.27
+	github.com/mattn/go-runewidth v0.0.29
 	github.com/muesli/reflow v0.3.0
 	github.com/oklog/ulid/v2 v2.1.2
 	github.com/posener/complete v1.2.3
 	github.com/sahilm/fuzzy v0.1.3
 	github.com/willabides/kongplete v0.4.0
-	github.com/yuin/goldmark v1.8.5
-	golang.org/x/sys v0.47.0
+	github.com/yuin/goldmark v1.8.6
+	golang.org/x/sys v0.48.0
 	golang.org/x/term v0.45.0
 	gopkg.in/yaml.v3 v3.0.1
-	modernc.org/sqlite v1.56.0
+	modernc.org/sqlite v1.58.0
 )
 
 require (
@@ -57,9 +57,9 @@ require (
 	golang.org/x/telemetry v0.0.0-20260708182218-49f421fb7959 // indirect
 	golang.org/x/text v0.40.0 // indirect
 	golang.org/x/tools v0.48.0 // indirect
-	modernc.org/libc v1.74.4 // indirect
+	modernc.org/libc v1.75.6 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
-	modernc.org/memory v1.11.0 // indirect
+	modernc.org/memory v1.12.1 // indirect
 )
 
 tool golang.org/x/tools/cmd/goimports
