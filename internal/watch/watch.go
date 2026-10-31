@@ -147,7 +147,10 @@ func (w *Watcher) coalesce() {
 			if !ok {
 				return
 			}
-		case <-w.fs.Errors:
+		case _, ok := <-w.fs.Errors:
+			if !ok {
+				return
+			}
 			// Discard during the burst; the next genuine error will
 			// surface on its own.
 		case <-timer.C:
