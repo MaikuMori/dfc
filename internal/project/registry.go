@@ -42,6 +42,9 @@ type Entry struct {
 	Prefix   string    `json:"prefix,omitempty"`
 	Tags     []string  `json:"tags,omitempty"`
 	LastUsed time.Time `json:"last_used,omitempty"`
+	// LastSeen is when the TUI last left this project; open tasks created
+	// after it render as unread. Zero means nothing counts as unread.
+	LastSeen time.Time `json:"last_seen,omitzero"`
 }
 
 // Registry maps project slugs to their metadata. The on-disk format is a
@@ -122,7 +125,7 @@ func (r *Registry) Register(slug, name string) bool {
 	if name == "" || r.nameInUse(name, slug) != "" {
 		name = slug
 	}
-	r.entries[slug] = Entry{Name: name, LastUsed: existing.LastUsed, Prefix: existing.Prefix, Tags: existing.Tags}
+	r.entries[slug] = Entry{Name: name, LastUsed: existing.LastUsed, LastSeen: existing.LastSeen, Prefix: existing.Prefix, Tags: existing.Tags}
 	return !existed
 }
 
@@ -141,6 +144,29 @@ func (r *Registry) Touch(slug string) error {
 // LastUsed returns the timestamp for slug, or the zero value if unknown.
 func (r *Registry) LastUsed(slug string) time.Time {
 	return r.entries[slug].LastUsed
+}
+
+// LastSeen returns when the TUI last left slug, or the zero value if never.
+func (r *Registry) LastSeen(slug string) time.Time {
+	return r.entries[slug].LastSeen
+}
+
+// MarkSeen sets LastSeen = now for each registered slug and persists the
+// registry. Unknown slugs are skipped so a deleted project stays deleted.
+func (r *Registry) MarkSeen(slugs ...string) error {
+	now := time.Now().UTC().Truncate(time.Second)
+	changed := false
+	for _, slug := range slugs {
+		if e, ok := r.entries[slug]; ok {
+			e.LastSeen = now
+			r.entries[slug] = e
+			changed = true
+		}
+	}
+	if !changed {
+		return nil
+	}
+	return r.Save()
 }
 
 // Rename updates the display name for slug, preserving LastUsed, and writes

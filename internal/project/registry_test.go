@@ -602,3 +602,30 @@ func TestRegistry_Slugs(t *testing.T) {
 		t.Errorf("Slugs() = %v, want [a b]", got)
 	}
 }
+
+func TestMarkSeenPersistsAndSkipsUnknown(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "projects.json")
+	reg, err := loadRegistryFromPath(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg.Register("known", "Known")
+	if err := reg.MarkSeen("known", "gone"); err != nil {
+		t.Fatal(err)
+	}
+	reg.Register("known", "Renamed")
+
+	if err := reg.Save(); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := loadRegistryFromPath(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.LastSeen("known").IsZero() {
+		t.Error("LastSeen should survive Register and a reload")
+	}
+	if loaded.Has("gone") {
+		t.Error("MarkSeen must not register unknown slugs")
+	}
+}

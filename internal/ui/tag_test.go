@@ -364,7 +364,7 @@ func TestStripTags(t *testing.T) {
 
 func TestRenderRowCollectsTagsAfterTitle(t *testing.T) {
 	task := storage.Task{Description: "ship it #p3 #later", Status: storage.StatusOpen}
-	row := ansiSGR.ReplaceAllString(renderRow(task, "", false, 60, task.Tags()), "")
+	row := ansiSGR.ReplaceAllString(renderRow(task, "", false, false, 60, task.Tags()), "")
 	// Title reads clean, with the tags lifted out and grouped after it.
 	if !strings.Contains(row, "ship it #p3 #later") {
 		t.Errorf("tags not grouped after the title: %q", row)
@@ -384,7 +384,7 @@ func TestRenderRowTagsOnCursorAndDoneRows(t *testing.T) {
 		{"done+cursor", true, storage.StatusDone},
 	} {
 		task := storage.Task{Description: "ship it #p3 #later", Status: tc.status}
-		row := ansiSGR.ReplaceAllString(renderRow(task, "", tc.cursor, 60, task.Tags()), "")
+		row := ansiSGR.ReplaceAllString(renderRow(task, "", tc.cursor, false, 60, task.Tags()), "")
 		if !strings.Contains(row, "#p3") || !strings.Contains(row, "#later") {
 			t.Errorf("%s row missing collected tags: %q", tc.name, row)
 		}
@@ -393,7 +393,7 @@ func TestRenderRowTagsOnCursorAndDoneRows(t *testing.T) {
 
 func TestRenderRowTagOverflow(t *testing.T) {
 	task := storage.Task{Description: "do #a #b #c #d #e", Status: storage.StatusOpen}
-	row := ansiSGR.ReplaceAllString(renderRow(task, "", false, 60, task.Tags()), "")
+	row := ansiSGR.ReplaceAllString(renderRow(task, "", false, false, 60, task.Tags()), "")
 	for _, want := range []string{"#a", "#b", "#c", "+2"} {
 		if !strings.Contains(row, want) {
 			t.Errorf("row missing %q: %q", want, row)

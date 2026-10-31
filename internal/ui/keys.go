@@ -37,6 +37,7 @@ type keyMap struct {
 	SearchClear      key.Binding
 	Switch           key.Binding
 	Sort             key.Binding
+	MarkRead         key.Binding
 	SavedSearch      key.Binding
 	SaveSearch       key.Binding
 	PickerEditTags   key.Binding
@@ -79,6 +80,7 @@ var keys = keyMap{
 
 	Switch:          key.NewBinding(key.WithKeys("P"), key.WithHelp("P", "switch")),
 	Sort:            key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "sort: modified/created")),
+	MarkRead:        key.NewBinding(key.WithKeys("R"), key.WithHelp("R", "mark all read")),
 	SavedSearch:     key.NewBinding(key.WithKeys("S"), key.WithHelp("S", "saved searches")),
 	SaveSearch:      key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("^s", "save search")),
 	PickerEditTags:  key.NewBinding(key.WithKeys("ctrl+t"), key.WithHelp("^t", "edit tags")),
@@ -109,7 +111,7 @@ func (k keyMap) FullHelp() [][]key.Binding {
 		{k.Up, k.Down, k.PageUp, k.PageDn, k.Top, k.Bottom, k.Expand},
 		{k.Capture, k.NewlineInCapture, k.Edit, k.EditExt, k.Move, k.Toggle, k.Delete, k.Undo, k.Yank, k.YankPath},
 		{k.Search, k.SearchCommit, k.SearchClear, k.SavedSearch},
-		{k.Switch, k.PickerRename, k.PickerSetPrefix, k.PickerDelete, k.Global, k.Sort},
+		{k.Switch, k.PickerRename, k.PickerSetPrefix, k.PickerDelete, k.Global, k.Sort, k.MarkRead},
 		{k.Help, k.Quit},
 	}
 }

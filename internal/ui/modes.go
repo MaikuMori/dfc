@@ -325,6 +325,9 @@ func (m *Model) switchTo(slug string) error {
 	if err != nil {
 		return err
 	}
+	if err := m.core.Registry().MarkSeen(m.slug); err != nil {
+		return err
+	}
 	if err := m.core.Registry().Touch(slug); err != nil {
 		return err
 	}
@@ -417,6 +420,14 @@ func (m Model) updateList(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, keys.SavedSearch):
 		return m.openSavedSearchPicker()
+
+	case key.Matches(msg, keys.MarkRead):
+		for _, t := range m.tasks {
+			m.readIDs[t.ID] = true
+		}
+		m.status = "marked all read"
+		m.relayout()
+		return m, nil
 
 	case key.Matches(msg, keys.Sort):
 		m.sortKey = m.sortKey.next()
@@ -818,6 +829,7 @@ func (m *Model) commitCapture(desc, details string) error {
 	if err != nil {
 		return err
 	}
+	m.readIDs[res.Task.ID] = true
 	m.tasks = sortDoneFirst(append(m.tasks, res.Task), m.sortKey)
 	if i := indexByIDSlug(m.tasks, res.Task.ID, res.Task.ProjectSlug, m.globalView); i >= 0 {
 		m.cursor = i

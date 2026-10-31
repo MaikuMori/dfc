@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"charm.land/bubbles/v2/textarea"
@@ -69,6 +70,9 @@ type Model struct {
 	// pendingOverwrite is the saved-search name awaiting overwrite confirmation
 	// in modeSaveSearchName; "" = none.
 	pendingOverwrite string
+	// readIDs holds tasks read this session: the cursor reached them, `R` marked
+	// them, or this TUI captured them. Shared across Model copies.
+	readIDs map[string]bool
 }
 
 // New constructs a Model bound to the given Core, project slug, store
@@ -92,7 +96,12 @@ func New(cr *core.Core, slug string, store *storage.Store, initial []storage.Tas
 		// appear and where the user is most likely acting.
 		cursor = len(tasks) - 1
 	}
+	readIDs := map[string]bool{}
+	if len(tasks) > 0 {
+		readIDs[tasks[cursor].ID] = true
+	}
 	return Model{
+		readIDs:  readIDs,
 		core:     cr,
 		slug:     slug,
 		store:    store,
@@ -121,6 +130,38 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	next, cmd := m.update(msg)
+	if nm, ok := next.(Model); ok && nm.cursor >= 0 && nm.cursor < len(nm.tasks) {
+		nm.readIDs[nm.tasks[nm.cursor].ID] = true
+	}
+	return next, cmd
+}
+
+// isUnread reports whether t is an open task created since its project was last
+// left and not yet read this session.
+func (m Model) isUnread(t storage.Task) bool {
+	if t.Status == storage.StatusDone || m.readIDs[t.ID] {
+		return false
+	}
+	seen := m.core.Registry().LastSeen(t.ProjectSlug)
+	return !seen.IsZero() && t.Created.After(seen)
+}
+
+// seenSlugs returns the projects whose tasks are on screen.
+func (m Model) seenSlugs() []string {
+	if !m.globalView {
+		return []string{m.slug}
+	}
+	slugs := []string{m.slug}
+	for _, t := range m.tasks {
+		if !slices.Contains(slugs, t.ProjectSlug) {
+			slugs = append(slugs, t.ProjectSlug)
+		}
+	}
+	return slugs
+}
+
+func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
