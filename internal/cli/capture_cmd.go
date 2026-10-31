@@ -86,6 +86,10 @@ func (c *CaptureCmd) Run() error {
 	}
 	defer func() { _ = cr.Close() }()
 
+	if c.Project == "" && !c.JSON {
+		warnSlugShift(cr, slug)
+	}
+
 	res, err := cr.Capture(core.CaptureInput{
 		Slug:        slug,
 		Description: desc,
@@ -104,6 +108,18 @@ func (c *CaptureCmd) Run() error {
 		fmt.Println("captured")
 	}
 	return nil
+}
+
+// warnSlugShift prints a stderr hint when slug, cwd's project, is empty but a
+// sibling identity of the same directory still holds tasks.
+func warnSlugShift(cr *core.Core, slug string) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return
+	}
+	if shift, ok := cr.DetectSlugShift(cwd, slug); ok {
+		fmt.Fprintln(os.Stderr, "hint: "+shift.Hint())
+	}
 }
 
 // resolveCaptureTarget decides which project a capture lands in and

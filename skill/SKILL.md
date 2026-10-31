@@ -381,4 +381,5 @@ Optional details body.
 - **Prefer direct file edits for partial changes.** `dfc edit --details` replaces the whole body; for adding a paragraph or fixing a typo, get the path from `dfc show --json` and Edit the markdown directly. See the `dfc edit` section for details.
 - **Status enum** is exactly `open` | `done`. There is no in-progress / cancelled.
 - **`rm` is soft.** Deleted tasks live in `~/.dfc/trash/` and are recoverable via `dfc undo` until the TTL sweep. Use `dfc trash empty` to purge irrevocably.
+- **An empty project can mean a shifted slug.** Adding a git remote or moving a repo changes the resolved slug. Without `--json` or `-p`, `dfc ls` and `dfc c` print a stderr `hint:` naming the sibling project that still holds the tasks and the `dfc projects merge` command that moves them.
 - **Project slugs are deterministic from cwd**, so don't fabricate them — use `dfc project --json` or pass `-p` with a value the user gave you.

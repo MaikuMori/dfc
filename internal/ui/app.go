@@ -95,6 +95,11 @@ func Run() error {
 	cr.EnsureFresh()
 
 	model := New(cr, resolved.Slug, store, tasks, watcher)
+	if len(tasks) == 0 {
+		if shift, ok := cr.DetectSlugShift(cwd, resolved.Slug); ok {
+			model.status = shift.Hint()
+		}
+	}
 	// AltScreen is now declared per-frame in View(); bubbletea v2 dropped
 	// the WithAltScreen program option. No keyboard-enhancement options
 	// are needed: v2 auto-requests basic disambiguation, which is what
