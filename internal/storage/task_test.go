@@ -206,3 +206,20 @@ func TestTaskTags(t *testing.T) {
 		t.Errorf("Task.Tags() = %v, want [p3 later]", got)
 	}
 }
+
+func TestSplitBodyKeepsLineDirectlyUnderATXHeading(t *testing.T) {
+	desc, details := splitBody("# Title\nfirst line\n\nsecond")
+	if desc != "Title" {
+		t.Errorf("desc = %q", desc)
+	}
+	if details != "first line\n\nsecond" {
+		t.Errorf("details = %q", details)
+	}
+}
+
+func TestSplitBodyKeepsInlineCodeInHeading(t *testing.T) {
+	desc, _ := splitBody("# fix `foo` now")
+	if desc != "fix foo now" {
+		t.Errorf("desc = %q", desc)
+	}
+}

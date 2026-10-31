@@ -7,12 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yuin/goldmark"
-	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/extension"
-	extast "github.com/yuin/goldmark/extension/ast"
-	"github.com/yuin/goldmark/parser"
-	"github.com/yuin/goldmark/text"
+	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/extension"
+	"github.com/yuin/goldmark/v2/parser"
+	"github.com/yuin/goldmark/v2/text"
 	"gopkg.in/yaml.v3"
 
 	"github.com/MaikuMori/dfc/internal/tag"
@@ -20,12 +18,12 @@ import (
 
 // mdParser is shared by every splitBody call. goldmark's parser is safe for
 // concurrent reuse and Parse-only work is allocation-light.
-var mdParser parser.Parser = goldmark.New().Parser()
+var mdParser = parser.New()
 
 // taskListParser recognizes GFM task-list items (`- [ ]` / `- [x]`). It is
 // separate from mdParser so enabling the GFM extension can't shift the
 // heading/body parse that mdParser drives.
-var taskListParser parser.Parser = goldmark.New(goldmark.WithExtensions(extension.TaskList)).Parser()
+var taskListParser = parser.New(parser.WithExtensions(extension.TaskListItemParser))
 
 // Checkboxes counts GFM task-list items in a markdown body, returning how many
 // are checked and the total present. A body with no task list returns (0, 0).
@@ -37,14 +35,14 @@ func Checkboxes(body string) (done, total int) {
 		!strings.Contains(body, "[X]") {
 		return 0, 0
 	}
-	doc := taskListParser.Parse(text.NewReader([]byte(body)))
+	doc := taskListParser.Parse([]byte(body))
 	_ = ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
 		if !entering {
 			return ast.WalkContinue, nil
 		}
-		if cb, ok := n.(*extast.TaskCheckBox); ok {
+		if status, ok := extension.TaskStatusOf(n); ok {
 			total++
-			if cb.IsChecked {
+			if status == extension.TaskStatusCompleted {
 				done++
 			}
 		}
@@ -64,17 +62,16 @@ func CheckedItems(body string) []string {
 		return nil
 	}
 	src := []byte(body)
-	doc := taskListParser.Parse(text.NewReader(src))
+	doc := taskListParser.Parse(src)
 	var items []string
 	_ = ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
 		if !entering {
 			return ast.WalkContinue, nil
 		}
-		// The checkbox is the first inline of the item's text block; its parent
-		// holds the item's own text (inlineText ignores the checkbox node and
-		// any nested sub-list, which is a sibling block).
-		if cb, ok := n.(*extast.TaskCheckBox); ok && cb.IsChecked {
-			if p := cb.Parent(); p != nil {
+		// The item's first child is the text block holding its own text; any
+		// nested sub-list is a sibling block.
+		if status, ok := extension.TaskStatusOf(n); ok && status == extension.TaskStatusCompleted {
+			if p := n.FirstChild(); p != nil {
 				if txt := strings.Join(strings.Fields(inlineText(src, p)), " "); txt != "" {
 					items = append(items, txt)
 				}
@@ -233,7 +230,7 @@ func frontmatterID(b []byte) (string, error) {
 // line above details).
 func splitBody(body string) (desc, details string) {
 	src := []byte(body)
-	doc := mdParser.Parse(text.NewReader(src))
+	doc := mdParser.Parse(src)
 
 	var h1, anyHeading, firstPara ast.Node
 	for c := doc.FirstChild(); c != nil; c = c.NextSibling() {
@@ -287,22 +284,11 @@ func splitBody(body string) (desc, details string) {
 // underline so it doesn't leak into details.
 func headingSplit(src []byte, h *ast.Heading) (desc, details string) {
 	desc = inlineText(src, h)
-	endLine := lastLine(src, h.Lines())
-	if isSetextHeading(src, h) {
+	endLine := lastLine(src, h.Source())
+	if h.HeadingKind == ast.HeadingKindSetext {
 		endLine++
 	}
 	return desc, trimDetails(src, endLine+1)
-}
-
-// isSetextHeading reports whether h's source representation uses setext
-// (underline) syntax rather than ATX (`#` prefix).
-func isSetextHeading(src []byte, h *ast.Heading) bool {
-	if h.Lines().Len() == 0 {
-		return false
-	}
-	seg := h.Lines().At(0)
-	line := strings.TrimSpace(string(src[seg.Start:seg.Stop]))
-	return !strings.HasPrefix(line, "#")
 }
 
 // inlineText concatenates the textual content of an inline subtree, ignoring
@@ -313,7 +299,9 @@ func inlineText(src []byte, n ast.Node) string {
 	for c := n.FirstChild(); c != nil; c = c.NextSibling() {
 		switch v := c.(type) {
 		case *ast.Text:
-			b.Write(v.Segment.Value(src))
+			b.Write(rawValue(src, v.Value))
+		case *ast.CodeSpan:
+			b.Write(v.Value.Bytes(src))
 		default:
 			b.WriteString(inlineText(src, c))
 		}
@@ -321,14 +309,25 @@ func inlineText(src []byte, n ast.Node) string {
 	return b.String()
 }
 
+// rawValue returns the source bytes of a text value without decoding, so
+// backslash escapes and entities in a description survive verbatim.
+func rawValue(src []byte, v text.SingleLineValue) []byte {
+	if v.IsOwned() {
+		return v.Bytes(src)
+	}
+	i := v.Index()
+	return src[i.Start:i.Stop]
+}
+
 // paragraphSplit takes the first source line of a paragraph as the
 // description (preserving the "first text line" semantics) and treats the
 // rest of the document as details, starting from the next source line.
 func paragraphSplit(src []byte, p *ast.Paragraph) (desc, details string) {
-	if p.Lines().Len() == 0 {
+	lines := p.Source()
+	if len(lines) == 0 {
 		return "", trimDetails(src, 0)
 	}
-	first := p.Lines().At(0)
+	first := lines[0]
 	desc = strings.TrimRight(string(src[first.Start:first.Stop]), "\r\n")
 	startLine := lineOf(src, first.Start) + 1
 	return desc, trimDetails(src, startLine)
@@ -337,11 +336,11 @@ func paragraphSplit(src []byte, p *ast.Paragraph) (desc, details string) {
 // lastLine returns the 0-indexed source line containing the final byte of
 // the given segment slice (e.g. the underline of a setext heading or the
 // single line of an ATX heading).
-func lastLine(src []byte, segs *text.Segments) int {
-	if segs.Len() == 0 {
+func lastLine(src []byte, segs []text.Segment) int {
+	if len(segs) == 0 {
 		return 0
 	}
-	last := segs.At(segs.Len() - 1)
+	last := segs[len(segs)-1]
 	end := last.Stop - 1
 	if end < 0 {
 		end = 0
