@@ -69,6 +69,9 @@ func (c *LsCmd) Run() error {
 		if err != nil {
 			return err
 		}
+		if c.Project == "" && len(tasks) == 0 && !c.JSON {
+			warnSlugShift(cr, slug)
+		}
 	}
 
 	// Filter by status.

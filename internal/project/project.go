@@ -47,6 +47,33 @@ func Resolve(cwd string) (Resolved, error) {
 	return Resolved{Slug: Slugify(abs), Source: SourceCwd, Raw: abs}, nil
 }
 
+// Candidates returns every distinct identity cwd could resolve to, in Resolve's
+// priority order, so the first entry is what Resolve returns.
+func Candidates(cwd string) ([]Resolved, error) {
+	first, err := Resolve(cwd)
+	if err != nil {
+		return nil, err
+	}
+	out := []Resolved{first}
+	add := func(r Resolved) {
+		for _, seen := range out {
+			if seen.Slug == r.Slug {
+				return
+			}
+		}
+		out = append(out, r)
+	}
+	if top, ok := gitToplevel(cwd); ok {
+		add(Resolved{Slug: Slugify(top), Source: SourceToplevel, Raw: top})
+	}
+	abs, err := filepath.Abs(cwd)
+	if err != nil {
+		return nil, fmt.Errorf("could not resolve absolute path for %q: %w", cwd, err)
+	}
+	add(Resolved{Slug: Slugify(abs), Source: SourceCwd, Raw: abs})
+	return out, nil
+}
+
 func gitRemoteOrigin(cwd string) (string, bool) {
 	out, err := exec.Command("git", "-C", cwd, "remote", "get-url", "origin").Output()
 	if err != nil {

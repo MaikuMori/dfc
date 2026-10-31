@@ -99,3 +99,43 @@ func mustRun(t *testing.T, dir string, name string, args ...string) {
 		t.Fatalf("%s %v: %v\n%s", name, args, err, out)
 	}
 }
+
+func TestCandidates_RemoteFirstThenToplevelAndCwd(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	dir := t.TempDir()
+	for _, args := range [][]string{{"init", "-q"}, {"remote", "add", "origin", "git@github.com:acme/widget.git"}} {
+		if out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	sub := filepath.Join(dir, "sub")
+	if err := os.Mkdir(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cands, err := Candidates(sub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cands) != 3 {
+		t.Fatalf("got %d candidates: %+v", len(cands), cands)
+	}
+	want := []Source{SourceRemote, SourceToplevel, SourceCwd}
+	for i, s := range want {
+		if cands[i].Source != s {
+			t.Errorf("candidate %d source = %s, want %s", i, cands[i].Source, s)
+		}
+	}
+}
+
+func TestCandidates_DedupesWhenCwdIsNotARepo(t *testing.T) {
+	cands, err := Candidates(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cands) != 1 || cands[0].Source != SourceCwd {
+		t.Errorf("got %+v, want a single cwd candidate", cands)
+	}
+}

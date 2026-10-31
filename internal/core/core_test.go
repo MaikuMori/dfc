@@ -1031,3 +1031,55 @@ func TestInvalidateSavedSearches(t *testing.T) {
 		t.Errorf("Get(ext) after invalidate = %q,%v; want %q,true", q, ok, "#p3")
 	}
 }
+
+func TestDetectSlugShiftFindsTasksUnderCwdIdentity(t *testing.T) {
+	c := newTestCore(t)
+	cwd := t.TempDir()
+	from := project.Slugify(mustAbs(t, cwd))
+	if _, err := c.Capture(CaptureInput{Slug: from, Description: "stranded"}); err != nil {
+		t.Fatal(err)
+	}
+
+	shift, ok := c.DetectSlugShift(cwd, "github-com-acme-widget")
+	if !ok {
+		t.Fatal("expected a slug shift")
+	}
+	if shift.From != from || shift.To != "github-com-acme-widget" || shift.Tasks != 1 {
+		t.Errorf("shift = %+v", shift)
+	}
+	if storage.ProjectDirExists("github-com-acme-widget") {
+		t.Error("detection must not create the target project")
+	}
+	if want := "dfc projects merge " + from + " github-com-acme-widget"; !strings.Contains(shift.Hint(), want) {
+		t.Errorf("hint %q missing %q", shift.Hint(), want)
+	}
+}
+
+func TestDetectSlugShiftQuietWhenTargetHasTasks(t *testing.T) {
+	c := newTestCore(t)
+	cwd := t.TempDir()
+	for _, slug := range []string{project.Slugify(mustAbs(t, cwd)), "github-com-acme-widget"} {
+		if _, err := c.Capture(CaptureInput{Slug: slug, Description: "task"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if shift, ok := c.DetectSlugShift(cwd, "github-com-acme-widget"); ok {
+		t.Errorf("unexpected shift %+v", shift)
+	}
+}
+
+func TestDetectSlugShiftQuietWithoutSibling(t *testing.T) {
+	c := newTestCore(t)
+	if shift, ok := c.DetectSlugShift(t.TempDir(), "github-com-acme-widget"); ok {
+		t.Errorf("unexpected shift %+v", shift)
+	}
+}
+
+func mustAbs(t *testing.T, p string) string {
+	t.Helper()
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return abs
+}

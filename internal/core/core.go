@@ -780,6 +780,66 @@ func (c *Core) FindByID(id string) (slug, path string, err error) {
 	return "", "", nil
 }
 
+// SlugShift describes tasks left under another identity of the current
+// directory, typically after adding a git remote or renaming a repo.
+type SlugShift struct {
+	From   string // slug still holding the tasks
+	To     string // slug the directory resolves to today
+	Source project.Source
+	Tasks  int
+}
+
+// Hint is the one-line message telling the user how to recover the tasks.
+func (s SlugShift) Hint() string {
+	return fmt.Sprintf("this directory resolves to project %s, but %s (from %s) has %d task(s) — move them with: dfc projects merge %s %s",
+		s.To, s.From, s.Source, s.Tasks, s.From, s.To)
+}
+
+// DetectSlugShift reports a populated sibling identity of cwd when slug, the
+// project cwd already resolved to, has no tasks. The emptiness check is a single
+// directory read so capture stays fast: git and sibling scans only run for an
+// empty project. Sibling directories are probed without being created.
+func (c *Core) DetectSlugShift(cwd, slug string) (SlugShift, bool) {
+	if c.projectTaskCount(slug) > 0 {
+		return SlugShift{}, false
+	}
+	cands, err := project.Candidates(cwd)
+	if err != nil {
+		return SlugShift{}, false
+	}
+	for _, cand := range cands {
+		if cand.Slug == slug {
+			continue
+		}
+		if n := c.projectTaskCount(cand.Slug); n > 0 {
+			return SlugShift{From: cand.Slug, To: slug, Source: cand.Source, Tasks: n}, true
+		}
+	}
+	return SlugShift{}, false
+}
+
+// projectTaskCount counts task files in slug's directory without parsing them.
+func (c *Core) projectTaskCount(slug string) int {
+	if !storage.ProjectDirExists(slug) {
+		return 0
+	}
+	store, err := c.StoreFor(slug)
+	if err != nil {
+		return 0
+	}
+	entries, err := os.ReadDir(store.Dir())
+	if err != nil {
+		return 0
+	}
+	n := 0
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".md") {
+			n++
+		}
+	}
+	return n
+}
+
 // List returns tasks for one slug, oldest-modified first (matches
 // storage.Store.List).
 func (c *Core) List(slug string) ([]storage.Task, error) {
