@@ -6,7 +6,7 @@ Thanks for considering a contribution. dfc is a small, fast Go CLI/TUI — the p
 
 Prerequisites:
 
-- **Go 1.26+** — the project tracks the current stable Go release.
+- **Go 1.27+** — the project tracks the current stable Go release.
 - **just** — task runner. `brew install just`.
 - **golangci-lint** — `brew install golangci-lint` or see [installation](https://golangci-lint.run/usage/install/).
 - **changie** — release-notes tool. `brew install changie` or `go install github.com/miniscruff/changie@latest`.

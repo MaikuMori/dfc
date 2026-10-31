@@ -12,11 +12,10 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/yuin/goldmark"
-	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/parser"
-	"github.com/yuin/goldmark/text"
-	"github.com/yuin/goldmark/util"
+	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/parser"
+	"github.com/yuin/goldmark/v2/text"
+	"github.com/yuin/goldmark/v2/util"
 )
 
 // Span is one inline #tag occurrence in a plain string: its display name
@@ -199,8 +198,8 @@ type tagNode struct {
 var kindTag = ast.NewNodeKind("DfcTag")
 
 func (n *tagNode) Kind() ast.NodeKind { return kindTag }
-func (n *tagNode) Dump(src []byte, level int) {
-	ast.DumpHelper(n, src, level, map[string]string{"Name": n.Name}, nil)
+func (n *tagNode) Dump(_ []byte) *ast.NodeDump {
+	return ast.NewNodeDump(n, map[string]any{"Name": n.Name})
 }
 
 type tagInlineParser struct{}
@@ -208,7 +207,7 @@ type tagInlineParser struct{}
 func (tagInlineParser) Trigger() []byte { return []byte{'#'} }
 
 func (tagInlineParser) Parse(_ ast.Node, block text.Reader, _ parser.Context) ast.Node {
-	if !isTagBoundary(block.PrecendingCharacter()) {
+	if !isTagBoundary(block.PrecedingCharacter()) {
 		return nil
 	}
 	line, _ := block.PeekLine()
@@ -217,17 +216,17 @@ func (tagInlineParser) Parse(_ ast.Node, block text.Reader, _ parser.Context) as
 		return nil
 	}
 	block.Advance(n)
-	return &tagNode{Name: name}
+	node := &tagNode{Name: name}
+	node.Init(node)
+	return node
 }
 
 // docParser is goldmark with the #tag inline parser layered onto the
 // CommonMark defaults, so code spans, fenced code, and backslash escapes keep
 // precedence: a #tag inside `code` or after a '\' is not a tag.
-var docParser = goldmark.New(
-	goldmark.WithParserOptions(parser.WithInlineParsers(
-		util.Prioritized(tagInlineParser{}, 500),
-	)),
-).Parser()
+var docParser = parser.New(parser.WithInlineParsers(
+	util.Prioritized[parser.InlineParser](tagInlineParser{}, 500),
+))
 
 // FromMarkdown returns the unique inline #tags in a markdown body, in document
 // order, skipping any inside code spans or fenced code blocks. Matching is
@@ -236,7 +235,7 @@ func FromMarkdown(body string) []string {
 	if !strings.Contains(body, "#") {
 		return nil
 	}
-	doc := docParser.Parse(text.NewReader([]byte(body)))
+	doc := docParser.Parse([]byte(body))
 	seen := map[string]bool{}
 	var out []string
 	_ = ast.Walk(doc, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
