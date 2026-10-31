@@ -645,3 +645,14 @@ func TestRoot_DFCEnvRootHonored(t *testing.T) {
 		t.Errorf("expected one task file under %s, got %v", root, got)
 	}
 }
+
+func TestZshCompletionSupportsSourcingAndAutoload(t *testing.T) {
+	if !strings.HasPrefix(zshCompletion, "#compdef dfc\n") {
+		t.Error("zsh only autoloads a completion file whose first line is #compdef")
+	}
+	for _, want := range []string{`_dfc "$@"`, "compdef _dfc dfc"} {
+		if !strings.Contains(zshCompletion, want) {
+			t.Errorf("zsh completion missing %q", want)
+		}
+	}
+}
