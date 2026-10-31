@@ -106,6 +106,11 @@ func Run() error {
 	// gives us "shift+enter" recognition on terminals that support the
 	// Kitty keyboard protocol (Ghostty, Kitty, Alacritty, WezTerm, etc.).
 	prog := tea.NewProgram(model)
-	_, err = prog.Run()
+	final, err := prog.Run()
+	if fm, ok := final.(Model); ok && cr.ReloadRegistry() == nil {
+		if serr := cr.Registry().MarkSeen(fm.seenSlugs()...); serr != nil && err == nil {
+			err = serr
+		}
+	}
 	return err
 }

@@ -41,6 +41,7 @@ var (
 	styleCursor     = lipgloss.NewStyle().Background(colorCursorBg).Foreground(colorFg).Bold(true)
 	styleDoneCursor = lipgloss.NewStyle().Background(colorCursorBg).Foreground(colorMuted).Italic(true)
 	styleHint       = lipgloss.NewStyle().Foreground(colorMuted)
+	styleUnread     = lipgloss.NewStyle().Foreground(colorAccent)
 	// styleTag paints an inline #tag as a tinted pill so it stands out from the
 	// surrounding description text.
 	styleTag = lipgloss.NewStyle().Background(colorTagBg).Foreground(colorTagFg)
@@ -60,6 +61,7 @@ var (
 const (
 	iconOpen       = "○"
 	iconDone       = "✓"
+	iconUnread     = "•" // takes the space after the status icon, so text never shifts
 	iconHasDetails = "…" // 1-char hint that the row has expandable content
 )
 

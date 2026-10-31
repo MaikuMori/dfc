@@ -117,6 +117,7 @@ type rowKey struct {
 	prefix   string
 	cursor   bool
 	expanded bool
+	unread   bool
 	width    int
 }
 
@@ -146,7 +147,7 @@ func buildRows(m Model, width int) (rows []string, heights []int) {
 		k := rowKey{
 			id: t.ID, slug: t.ProjectSlug, modified: t.Modified.UnixNano(),
 			status: t.Status, prefix: prefix, cursor: i == m.cursor,
-			expanded: expanded, width: width,
+			expanded: expanded, unread: m.isUnread(t), width: width,
 		}
 		keys[i] = k
 
@@ -157,7 +158,7 @@ func buildRows(m Model, width int) (rows []string, heights []int) {
 		case expanded:
 			row = renderTaskMarkdown(t, prefix, width, rowInlineTags(m, t))
 		default:
-			row = renderRow(t, prefix, i == m.cursor, width, rowInlineTags(m, t))
+			row = renderRow(t, prefix, i == m.cursor, k.unread, width, rowInlineTags(m, t))
 		}
 		rows[i] = row
 		heights[i] = strings.Count(row, "\n") + 1
@@ -205,7 +206,7 @@ func projectPrefix(m Model, t storage.Task) string {
 // the title and grouped after it (capped, with a "+N" overflow), so a glance
 // reads the title cleanly and its tags as a set. Styling is identical in every
 // view (a filtered list renders done tasks the same muted way as the full list).
-func renderRow(t storage.Task, prefix string, cursor bool, width int, tags []string) string {
+func renderRow(t storage.Task, prefix string, cursor, unread bool, width int, tags []string) string {
 	icon := iconOpen
 	if t.Status == storage.StatusDone {
 		icon = iconDone
@@ -253,6 +254,9 @@ func renderRow(t storage.Task, prefix string, cursor bool, width int, tags []str
 	// path below.
 	if !cursor && !done {
 		first := styleOpen.Render(icon + " ")
+		if unread {
+			first = styleOpen.Render(icon) + styleUnread.Render(iconUnread)
+		}
 		if prefix != "" {
 			first += styleHint.Render(prefix)
 		}
@@ -330,11 +334,11 @@ func renderTaskMarkdown(t storage.Task, prefix string, width int, tags []string)
 	// view would overflow the terminal; fall back to the collapsed row
 	// so a tiny screen stays legible.
 	if mdWidth < 20 {
-		return renderRow(t, prefix, false, width, tags)
+		return renderRow(t, prefix, false, false, width, tags)
 	}
 	rendered := cachedMarkdown(t, mdWidth)
 	if rendered == "" {
-		return renderRow(t, prefix, false, width, tags)
+		return renderRow(t, prefix, false, false, width, tags)
 	}
 
 	icon := iconOpen
