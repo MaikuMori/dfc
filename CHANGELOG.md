@@ -7,6 +7,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 Release notes are managed via [changie](https://changie.dev). Add an entry with `changie new` rather than editing this file by hand; the file is regenerated on release.
 
 
+## [v0.6.0] - 2026-10-31
+
+### Added
+
+- Hint when a directory's project is empty but another of its project identities still has tasks
+- TUI marks open tasks captured since you last left a project as unread; R marks all read
+
+### Fixed
+
+- Keep a details line placed directly under a task's heading
 ## [v0.5.1] - 2026-08-02
 
 ### Fixed
