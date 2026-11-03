@@ -27,7 +27,8 @@ const bashCompletion = `# bash completion for dfc -*- shell-script -*-
 complete -o nospace -C dfc dfc
 `
 
-const zshCompletion = `# zsh completion for dfc -*- shell-script -*-
+const zshCompletion = `#compdef dfc
+# zsh completion for dfc -*- shell-script -*-
 #
 # Install: source <(dfc completion zsh) in .zshrc, or save to a file on $fpath
 # (e.g. ~/.zfunc/_dfc) and ensure compinit is loaded.
@@ -55,7 +56,14 @@ _dfc() {
         compadd -a candidates
     fi
 }
-compdef _dfc dfc
+
+# Autoloaded from $fpath, this file runs as _dfc itself, so complete now.
+# Sourced, compsys has to be told about the function instead.
+if [[ "${funcstack[1]}" == "_dfc" ]]; then
+    _dfc "$@"
+else
+    compdef _dfc dfc
+fi
 `
 
 const fishCompletion = `# fish completion for dfc -*- shell-script -*-
