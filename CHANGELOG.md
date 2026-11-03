@@ -7,6 +7,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 Release notes are managed via [changie](https://changie.dev). Add an entry with `changie new` rather than editing this file by hand; the file is regenerated on release.
 
 
+## [v0.6.1] - 2026-11-03
+
+### Fixed
+
+- Zsh completion works when installed as a file on $fpath
 ## [v0.6.0] - 2026-10-31
 
 ### Added
