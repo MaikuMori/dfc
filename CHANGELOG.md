@@ -7,6 +7,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 Release notes are managed via [changie](https://changie.dev). Add an entry with `changie new` rather than editing this file by hand; the file is regenerated on release.
 
 
+## [v0.7.0] - 2026-11-26
+
+### Added
+
+- TUI reopens an unsent capture or edit after the terminal is closed or killed
+- TUI resumes where it left off after a terminal restart on terminals that support the [Program Resume Protocol (OSC 7577)](https://www.superlogical.com/rex/docs/build/program-resume)
+
+### Fixed
+
+- Zsh completion works when installed as a file on $fpath
 ## [v0.6.0] - 2026-10-31
 
 ### Added
