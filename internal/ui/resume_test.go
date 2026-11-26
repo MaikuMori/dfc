@@ -1,10 +1,12 @@
 package ui
 
 import (
+	"os"
 	"slices"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/MaikuMori/dfc/internal/resume"
 	"github.com/MaikuMori/dfc/internal/storage"
@@ -21,8 +23,11 @@ func resumeDir(t *testing.T) string {
 	return resume.Dir(root)
 }
 
+// withResume gives m its own state file, as on a terminal that supports
+// program resume.
 func withResume(t *testing.T, m Model) Model {
 	t.Helper()
+	t.Setenv(ansi.ProgramResumeTokenEnv, "test")
 	inst, err := resume.Open(resumeDir(t))
 	if err != nil {
 		t.Fatal(err)
@@ -294,5 +299,112 @@ func TestLaunchRecoversGlobalViewCaptureIntoOtherProject(t *testing.T) {
 	r := sibling(t, m).applyOptions(Options{})
 	if r.mode != modeCapture || r.capTargetSlug != "home" || r.capArea.Value() != "x" || !r.globalView {
 		t.Fatalf("mode = %v, target = %q, text = %q, global = %v", r.mode, r.capTargetSlug, r.capArea.Value(), r.globalView)
+	}
+}
+
+func TestStateFileLocationPicksDataRoot(t *testing.T) {
+	m := newResumeModel(t)
+	path := abandon(t, m)
+	want, err := storage.Root()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(storage.EnvRoot, t.TempDir())
+	readStateOptions(Options{State: path})
+	if got := os.Getenv(storage.EnvRoot); got != want {
+		t.Errorf("DFC_ROOT = %q, want %q", got, want)
+	}
+}
+
+func TestExternalRenameIsNotAnEditDraft(t *testing.T) {
+	m := press(t, newResumeModel(t), runeKey('e'))
+	i := m.cursor
+	m.tasks[i].Description = "renamed elsewhere" // a watcher reload
+	if d := m.currentDraft(); !d.IsZero() {
+		t.Errorf("untouched editor saved as a draft: %+v", d)
+	}
+}
+
+func TestEditCommitsWhenTaskLeftTheFilter(t *testing.T) {
+	m := press(t, newResumeModel(t), runeKey('e'))
+	task := m.tasks[m.cursor]
+	m = press(t, m, runeKey('!'))
+	m.tasks = nil // a reload filtered it out
+	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if m.err != nil || m.mode != modeList {
+		t.Fatalf("err = %v, mode = %v", m.err, m.mode)
+	}
+	path, err := m.core.FindByIDInProject(task.ID, "work")
+	if err != nil || path == "" {
+		t.Fatal("task gone")
+	}
+	store, _ := m.core.StoreFor("work")
+	got, err := store.Load(path)
+	if err != nil || got.Description != task.Description+"!" {
+		t.Errorf("description = %q, %v", got.Description, err)
+	}
+}
+
+func TestEditOfDeletedTaskKeepsEditorOpen(t *testing.T) {
+	m := press(t, newResumeModel(t), runeKey('e'), runeKey('!'))
+	m.editID = "01AAAAAAAAAAAAAAAAAAAAAAAA"
+	m.tasks = nil
+	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if m.mode != modeEdit || m.err == nil {
+		t.Errorf("mode = %v, err = %v; want the editor kept with an error", m.mode, m.err)
+	}
+}
+
+func TestRecoverySkipsEditOfDeletedTask(t *testing.T) {
+	m := newResumeModel(t)
+	abandon(t, settle(press(t, sibling(t, m), runeKey('c'), runeKey('o'), runeKey('k'))))
+	e := press(t, sibling(t, m), runeKey('e'), runeKey('!'))
+	e.editID = "01AAAAAAAAAAAAAAAAAAAAAAAA"
+	abandon(t, e)
+
+	r := sibling(t, m).applyOptions(Options{})
+	if r.mode != modeCapture || r.capArea.Value() != "ok" {
+		t.Errorf("mode = %v, text = %q; want the capture recovered", r.mode, r.capArea.Value())
+	}
+}
+
+func TestDraftlessExitWithoutResumeLeavesNothing(t *testing.T) {
+	m := newResumeModel(t)
+	t.Setenv(ansi.ProgramResumeTokenEnv, "")
+	path := abandon(t, settle(press(t, m, runeKey('k'))))
+	if _, ok := resume.Read(path); ok {
+		t.Error("state file kept with no draft and no resume support")
+	}
+
+	m = sibling(t, m)
+	t.Setenv(ansi.ProgramResumeTokenEnv, "")
+	path = abandon(t, settle(press(t, m, runeKey('c'), runeKey('x'))))
+	if st, ok := resume.Read(path); !ok || st.Draft.Text != "x" {
+		t.Errorf("draft not kept without resume support: %+v, %v", st, ok)
+	}
+}
+
+func TestLaunchRecoversDraftTypedAfterSwitch(t *testing.T) {
+	m := newResumeModel(t)
+	m.res.launch = "work"
+	if err := m.switchTo("home"); err != nil {
+		t.Fatal(err)
+	}
+	abandon(t, settle(press(t, m, runeKey('c'), runeKey('x'))))
+
+	r := withResume(t, sibling(t, m))
+	r = r.applyOptions(Options{})
+	if r.mode != modeCapture || r.capArea.Value() != "x" || r.capTargetSlug != "home" {
+		t.Errorf("mode = %v, text = %q, target = %q", r.mode, r.capArea.Value(), r.capTargetSlug)
+	}
+}
+
+func TestResumedEditOfMovedTaskKeepsText(t *testing.T) {
+	m := press(t, newResumeModel(t), runeKey('e'), runeKey('!'))
+	m.editID = "01AAAAAAAAAAAAAAAAAAAAAAAA"
+	path := abandon(t, m)
+	r := sibling(t, m).applyOptions(readStateOptions(Options{State: path}))
+	if r.mode != modeCapture || r.capArea.Value() == "" || r.status == "" {
+		t.Errorf("mode = %v, text = %q, status = %q", r.mode, r.capArea.Value(), r.status)
 	}
 }

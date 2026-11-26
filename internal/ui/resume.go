@@ -3,11 +3,13 @@ package ui
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/MaikuMori/dfc/internal/resume"
 	"github.com/MaikuMori/dfc/internal/storage"
@@ -34,7 +36,7 @@ const stateSaveInterval = 300 * time.Millisecond
 type resumeState struct {
 	exe     string // argv[0] of the resume command
 	dir     string // working directory of the resume command
-	root    string // DFC_ROOT override to carry into the state, if any
+	launch  string // project the TUI started in
 	inst    *resume.Instance
 	pending resume.State // latest state, written on the next tick
 	saved   resume.State // what the state file holds
@@ -46,7 +48,7 @@ type stateSaveMsg struct{}
 // newResumeState opens this instance's state file, or returns nil when it or
 // the resume command can't be set up.
 func newResumeState(cwd string) *resumeState {
-	exe, err := os.Executable()
+	exe, err := resumeExe()
 	if err != nil {
 		return nil
 	}
@@ -60,30 +62,50 @@ func newResumeState(cwd string) *resumeState {
 	if err != nil {
 		return nil
 	}
-	r := &resumeState{exe: exe, dir: cwd, inst: inst}
-	if os.Getenv(storage.EnvRoot) != "" {
-		r.root, _ = filepath.Abs(root)
-	}
-	return r
+	return &resumeState{exe: exe, dir: cwd, inst: inst}
 }
 
-// readStateOptions folds the view saved at opts.State into opts and applies
-// its data root, so the resumed TUI opens the same stores. It runs before
-// anything resolves the root.
+// resumeExe is the program a resume command should run: the `dfc` on PATH
+// when it is this binary, so an upgrade that swaps what a symlink points at
+// still resumes, otherwise this binary's own path.
+func resumeExe() (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	if p, err := exec.LookPath("dfc"); err == nil {
+		if abs, err := filepath.Abs(p); err == nil && sameFile(abs, exe) {
+			return abs, nil
+		}
+	}
+	return exe, nil
+}
+
+// readStateOptions folds the view saved at opts.State into opts and points
+// DFC_ROOT at the data root the file lives under, so the resumed TUI opens
+// the same stores whatever environment the terminal starts it in. It runs
+// before anything resolves the root.
 func readStateOptions(opts Options) Options {
 	if opts.State == "" {
 		return opts
 	}
 	st, ok := resume.Read(opts.State)
-	if !ok {
+	root := resume.RootOf(opts.State)
+	if !ok || root == "" {
 		return opts
 	}
-	if st.Root != "" && os.Getenv(storage.EnvRoot) == "" {
-		_ = os.Setenv(storage.EnvRoot, st.Root)
+	if cur, err := storage.Root(); err != nil || !sameFile(cur, root) {
+		_ = os.Setenv(storage.EnvRoot, root)
 	}
 	v := st.View
 	opts.Project, opts.Global, opts.Query, opts.Sort, opts.Cursor = v.Project, v.Global, v.Query, v.Sort, v.Cursor
 	return opts
+}
+
+func sameFile(a, b string) bool {
+	ai, aerr := os.Stat(a)
+	bi, berr := os.Stat(b)
+	return aerr == nil && berr == nil && os.SameFile(ai, bi)
 }
 
 // quit ends the program as a deliberate user exit: the last frame clears the
@@ -106,19 +128,18 @@ func (m Model) programResume() *tea.ProgramResume {
 
 // currentState is what the state file should hold right now.
 func (m Model) currentState() resume.State {
-	v := resume.View{Project: m.slug, Global: m.globalView, Query: m.searchQuery}
+	v := resume.View{Project: m.slug, Global: m.globalView, Query: m.searchQuery, Launch: m.res.launch}
 	if m.sortKey == sortByCreated {
 		v.Sort = sortByCreated.String()
 	}
 	if m.cursor >= 0 && m.cursor < len(m.tasks) {
 		v.Cursor = m.tasks[m.cursor].ID
 	}
-	return resume.State{Root: m.res.root, View: v, Draft: m.currentDraft()}
+	return resume.State{View: v, Draft: m.currentDraft()}
 }
 
 // currentDraft returns the unsubmitted input on screen, if any. An inline
-// edit counts once its text differs from the description of the task it
-// opened on.
+// edit counts once its text differs from what the editor opened with.
 func (m Model) currentDraft() resume.Draft {
 	switch m.mode {
 	case modeCapture:
@@ -133,11 +154,9 @@ func (m Model) currentDraft() resume.Draft {
 		if m.editID == "" {
 			return resume.Draft{}
 		}
-		v := m.input.Value()
-		if i := indexByIDSlug(m.tasks, m.editID, m.editSlug, true); i >= 0 && m.tasks[i].Description == v {
-			return resume.Draft{}
+		if v := m.input.Value(); v != m.editOrig {
+			return resume.Draft{Kind: resume.KindEdit, Text: v, Slug: m.editSlug, TaskID: m.editID}
 		}
-		return resume.Draft{Kind: resume.KindEdit, Text: v, Slug: m.editSlug, TaskID: m.editID}
 	}
 	return resume.Draft{}
 }
@@ -195,10 +214,11 @@ func (m Model) finishState() error {
 	if r == nil {
 		return nil
 	}
-	if m.quitting {
+	r.pending = m.currentState()
+	// Without a draft the file only serves a terminal resume.
+	if m.quitting || (r.pending.Draft.IsZero() && os.Getenv(ansi.ProgramResumeTokenEnv) == "") {
 		return r.inst.Close(true)
 	}
-	r.pending = m.currentState()
 	err := m.flushState()
 	_ = r.inst.Close(false)
 	return err
@@ -246,7 +266,8 @@ func (m Model) applyOptions(opts Options) Model {
 				m = m.restoreDraft(st)
 			}
 		} else if st, ok := m.recoverState(); ok {
-			if st.View.Global && !m.globalView && len(m.core.Registry().Slugs()) > 1 {
+			otherEdit := st.Draft.Kind == resume.KindEdit && st.Draft.Slug != m.slug
+			if (st.View.Global || otherEdit) && !m.globalView && len(m.core.Registry().Slugs()) > 1 {
 				// The draft may target, or edit a task in, another project.
 				m.globalView = true
 				if err := m.refreshWatches(); err != nil {
@@ -267,17 +288,17 @@ func (m Model) applyOptions(opts Options) Model {
 }
 
 // recoverState claims the newest state file abandoned by a dfc that is no
-// longer running whose draft belongs here: made in the current project's TUI,
-// or aimed at the current project. An edit draft also needs its task to still
+// longer running whose draft belongs here: made in a TUI launched in or
+// showing the current project, or aimed at the current project. An edit draft also needs its task to still
 // exist.
 func (m Model) recoverState() (resume.State, bool) {
 	for _, path := range resume.Orphans(filepath.Dir(m.res.inst.Path())) {
 		st, ok := resume.Read(path)
-		if !ok || (st.Draft.Slug != m.slug && st.View.Project != m.slug) {
+		if !ok || (st.Draft.Slug != m.slug && st.View.Project != m.slug && st.View.Launch != m.slug) {
 			continue
 		}
 		if d := st.Draft; d.Kind == resume.KindEdit {
-			if _, err := m.core.FindByIDInProject(d.TaskID, d.Slug); err != nil {
+			if path, err := m.core.FindByIDInProject(d.TaskID, d.Slug); err != nil || path == "" {
 				continue
 			}
 		}
@@ -306,7 +327,11 @@ func (m Model) restoreDraft(st resume.State) Model {
 	switch d := st.Draft; d.Kind {
 	case resume.KindCapture:
 		target := d.Slug
-		if target == m.slug || !storage.ProjectDirExists(target) {
+		switch {
+		case target == m.slug:
+			target = ""
+		case !storage.ProjectDirExists(target):
+			m.status = fmt.Sprintf("project %s is gone; enter captures into %s", target, m.core.Registry().Name(m.slug))
 			target = ""
 		}
 		m.mode = modeCapture
@@ -324,15 +349,23 @@ func (m Model) restoreDraft(st resume.State) Model {
 			m = m.reloadActive()
 			found = m.moveCursorTo(d.TaskID)
 		}
-		if found {
-			m.mode = modeEdit
-			m.editID, m.editSlug = d.TaskID, d.Slug
-			m.input.Reset()
-			m.input.SetValue(d.Text)
-			m.input.CursorEnd()
-			m.input.Focus()
+		if !found {
+			// Keep the text rather than lose it with the task.
+			m.mode = modeCapture
+			m.beginCapture()
+			m.capArea.SetValue(d.Text)
+			resizeQuickCapture(&m.capArea)
 			m.relayout()
+			m.status = "the edited task is gone; enter saves the text as a new task"
+			break
 		}
+		m.mode = modeEdit
+		m.editID, m.editSlug, m.editOrig = d.TaskID, d.Slug, m.tasks[m.cursor].Description
+		m.input.Reset()
+		m.input.SetValue(d.Text)
+		m.input.CursorEnd()
+		m.input.Focus()
+		m.relayout()
 	}
 	if r := m.res; r != nil {
 		r.saved = st

@@ -474,7 +474,7 @@ func (m Model) updateList(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.mode = modeEdit
-		m.editID, m.editSlug = m.tasks[m.cursor].ID, m.tasks[m.cursor].ProjectSlug
+		m.editID, m.editSlug, m.editOrig = m.tasks[m.cursor].ID, m.tasks[m.cursor].ProjectSlug, m.tasks[m.cursor].Description
 		m.input.Reset()
 		m.input.SetValue(m.tasks[m.cursor].Description)
 		m.input.CursorEnd()
@@ -747,7 +747,9 @@ func (m Model) updateInput(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if err := m.commitEdit(text); err != nil {
+			// Keep the editor and its draft so the text isn't lost.
 			m.err = err
+			return m, nil
 		}
 		m.exitInput()
 		if m.searchQuery != "" {
@@ -841,12 +843,28 @@ func (m *Model) commitCapture(desc, details string) error {
 	return nil
 }
 
+// commitEdit renames the task the editor opened on, found by id even when a
+// reload has dropped it from the visible rows.
 func (m *Model) commitEdit(desc string) error {
-	i := indexByIDSlug(m.tasks, m.editID, m.editSlug, true)
-	if i < 0 {
-		return errors.New("the task being edited is no longer listed")
+	var t storage.Task
+	if i := indexByIDSlug(m.tasks, m.editID, m.editSlug, true); i >= 0 {
+		t = m.tasks[i]
+	} else {
+		path, err := m.core.FindByIDInProject(m.editID, m.editSlug)
+		if err != nil {
+			return err
+		}
+		if path == "" {
+			return errors.New("the task being edited no longer exists; esc discards the edit")
+		}
+		store, err := m.core.StoreFor(m.editSlug)
+		if err != nil {
+			return err
+		}
+		if t, err = store.Load(path); err != nil {
+			return err
+		}
 	}
-	t := m.tasks[i]
 	if err := m.core.RenameTask(&t, desc); err != nil {
 		return err
 	}
@@ -864,7 +882,7 @@ func (m *Model) exitInput() {
 	// Always drop any pending capture target — picker cancel, capture
 	// cancel, commit success, and commit failure all flow through here.
 	m.capTargetSlug = ""
-	m.editID, m.editSlug = "", ""
+	m.editID, m.editSlug, m.editOrig = "", "", ""
 	m.pendingOverwrite = ""
 	m.relayout()
 }

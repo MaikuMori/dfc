@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/oklog/ulid/v2"
@@ -33,7 +34,6 @@ const (
 const (
 	stateExt = ".json"
 	lockExt  = ".lock"
-	claimExt = ".claim"
 )
 
 // Draft is unsubmitted input from the capture overlay or the inline editor.
@@ -56,21 +56,31 @@ type View struct {
 	Query   string `json:"query,omitempty"`
 	Sort    string `json:"sort,omitempty"`
 	Cursor  string `json:"cursor,omitempty"`
+	// Launch is the project the TUI started in, kept across `P` switches.
+	Launch string `json:"launch,omitempty"`
 }
 
 // State is one instance's saved view and draft.
 type State struct {
-	// Root is the dfc data root the instance ran against, when it was
-	// overridden; a resumed command may start in a fresh environment.
-	Root  string `json:"root,omitempty"`
-	View  View   `json:"view"`
-	Draft Draft  `json:"draft,omitzero"`
+	View  View  `json:"view"`
+	Draft Draft `json:"draft,omitzero"`
 }
 
-// record is the on-disk form.
+// RootOf returns the dfc data root a state file lives under, or "" when path
+// isn't inside a resume directory.
+func RootOf(path string) string {
+	abs, err := filepath.Abs(path)
+	if err != nil || filepath.Base(filepath.Dir(abs)) != "resume" {
+		return ""
+	}
+	return filepath.Dir(filepath.Dir(abs))
+}
+
+// record is the on-disk form. Machine scopes liveness to the machine that
+// wrote it: locks don't cross machines when the data root is synced.
 type record struct {
 	State
-	Host string `json:"host,omitempty"`
+	Machine string `json:"machine,omitempty"`
 }
 
 // Dir returns the resume directory under the dfc root.
@@ -108,7 +118,7 @@ func (i *Instance) Path() string { return i.path }
 
 // Save writes s atomically.
 func (i *Instance) Save(s State) error {
-	data, err := json.Marshal(record{State: s, Host: hostname()})
+	data, err := json.Marshal(record{State: s, Machine: machineID()})
 	if err != nil {
 		return err
 	}
@@ -124,35 +134,34 @@ func (i *Instance) Close(discard bool) error {
 			err = rerr
 		}
 	}
-	_ = os.Remove(lockPath(i.path))
+	// Windows can't delete a file that is still open.
 	_ = i.lock.Close()
+	if rerr := os.Remove(lockPath(i.path)); rerr != nil && !errors.Is(rerr, fs.ErrNotExist) && err == nil {
+		err = rerr
+	}
 	return err
 }
 
 // Claim takes over the abandoned state file at src: it must be a state file
 // in this instance's directory, written on this host, whose owner is gone.
-// The file is moved through a name no other instance scans, then saved as
-// this instance's own. ok is false when src doesn't qualify or another
-// instance claimed it first; src is left untouched unless it was taken.
+// It is renamed onto this instance's path, which this instance's lock already
+// guards, so the record is never without an owner or a copy. ok is false
+// when src doesn't qualify or another instance claimed it first; src is left
+// untouched unless it was taken.
 func (i *Instance) Claim(src string) (State, bool) {
 	src, err := filepath.Abs(src)
 	if err != nil || filepath.Dir(src) != filepath.Dir(i.path) || filepath.Ext(src) != stateExt || src == i.path {
 		return State{}, false
 	}
-	if r, ok := readRecord(src); !ok || r.Host != hostname() || ownerAlive(src) {
+	if r, ok := readRecord(src); !ok || r.Machine != machineID() || ownerAlive(src) {
 		return State{}, false
 	}
-	staging := i.path + claimExt
-	if err := os.Rename(src, staging); err != nil {
+	if err := os.Rename(src, i.path); err != nil {
 		return State{}, false
 	}
-	defer func() { _ = os.Remove(staging) }()
 	_ = os.Remove(lockPath(src))
-	r, ok := readRecord(staging)
-	if !ok || i.Save(r.State) != nil {
-		return State{}, false
-	}
-	return r.State, true
+	r, ok := readRecord(i.path)
+	return r.State, ok
 }
 
 // Read returns the state at path without claiming it.
@@ -168,7 +177,7 @@ func Orphans(dir string) []string {
 	if err != nil {
 		return nil
 	}
-	host := hostname()
+	machine := machineID()
 	type found struct {
 		path string
 		mod  time.Time
@@ -180,7 +189,7 @@ func Orphans(dir string) []string {
 		}
 		path := filepath.Join(dir, e.Name())
 		r, ok := readRecord(path)
-		if !ok || r.Draft.IsZero() || r.Host != host || ownerAlive(path) {
+		if !ok || r.Draft.IsZero() || r.Machine != machine || ownerAlive(path) {
 			continue
 		}
 		if info, err := e.Info(); err == nil {
@@ -201,15 +210,31 @@ func Prune(dir string, maxAge time.Duration) {
 	if err != nil {
 		return
 	}
-	cutoff := time.Now().Add(-maxAge)
+	now := time.Now()
 	for _, e := range entries {
-		if e.IsDir() || filepath.Ext(e.Name()) != stateExt {
+		if e.IsDir() {
 			continue
 		}
 		path := filepath.Join(dir, e.Name())
-		if info, err := e.Info(); err == nil && info.ModTime().Before(cutoff) && !ownerAlive(path) {
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		switch {
+		case filepath.Ext(e.Name()) == stateExt:
+			if info.ModTime().Before(now.Add(-maxAge)) && !ownerAlive(path) {
+				_ = os.Remove(path)
+				_ = os.Remove(lockPath(path))
+			}
+		case filepath.Ext(e.Name()) == lockExt:
+			// A lock whose state file is gone, left by a crash.
+			state := strings.TrimSuffix(path, lockExt) + stateExt
+			if _, err := os.Stat(state); os.IsNotExist(err) && !ownerAlive(state) {
+				_ = os.Remove(path)
+			}
+		case strings.HasPrefix(e.Name(), ".") && info.ModTime().Before(now.Add(-time.Hour)):
+			// A temp file from a write that was interrupted.
 			_ = os.Remove(path)
-			_ = os.Remove(lockPath(path))
 		}
 	}
 }
@@ -247,7 +272,27 @@ func readRecord(path string) (record, bool) {
 	return r, true
 }
 
-func hostname() string {
+// EnvMachineID overrides the machine id (tests).
+const EnvMachineID = "DFC_MACHINE_ID"
+
+// machineID identifies this machine. It lives in the user cache dir rather
+// than the data root, which may be synced between machines, and is
+// generated once because hostnames change with the network.
+var machineID = sync.OnceValue(func() string {
+	if v := os.Getenv(EnvMachineID); v != "" {
+		return v
+	}
+	dir, err := os.UserCacheDir()
+	if err == nil {
+		path := filepath.Join(dir, "dfc", "machine-id")
+		if data, err := os.ReadFile(path); err == nil && len(strings.TrimSpace(string(data))) > 0 {
+			return strings.TrimSpace(string(data))
+		}
+		id := strings.ToLower(ulid.Make().String())
+		if os.MkdirAll(filepath.Dir(path), 0o700) == nil && fsutil.WriteFileAtomic(path, []byte(id+"\n"), 0o600) == nil {
+			return id
+		}
+	}
 	h, _ := os.Hostname()
 	return h
-}
+})

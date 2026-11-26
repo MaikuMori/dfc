@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"golang.org/x/term"
@@ -103,6 +104,9 @@ func Run(opts Options) error {
 
 	model := New(cr, slug, store, tasks, watcher)
 	model.res = newResumeState(cwd)
+	if model.res != nil {
+		model.res.launch = slug
+	}
 	model = model.applyOptions(opts)
 	if len(tasks) == 0 && slug == resolved.Slug {
 		if shift, ok := cr.DetectSlugShift(cwd, resolved.Slug); ok {
@@ -124,6 +128,9 @@ func Run(opts Options) error {
 	go func() {
 		if _, ok := <-hup; ok {
 			prog.Quit()
+			// Quit waits while $EDITOR runs; don't outlive the terminal.
+			time.Sleep(2 * time.Second)
+			prog.Kill()
 		}
 	}()
 
@@ -136,6 +143,9 @@ func Run(opts Options) error {
 		fm = *f
 	default:
 		return err
+	}
+	if errors.Is(err, tea.ErrProgramKilled) {
+		err = nil
 	}
 	if derr := fm.finishState(); derr != nil && err == nil {
 		err = derr

@@ -94,7 +94,7 @@ func TestOrphansSkipLiveForeignAndDraftless(t *testing.T) {
 	}
 
 	foreign := filepath.Join(dir, "foreign.json")
-	data := `{"view":{},"draft":{"kind":"capture","text":"x"},"host":"elsewhere"}`
+	data := `{"view":{},"draft":{"kind":"capture","text":"x"},"machine":"elsewhere"}`
 	if err := os.WriteFile(foreign, []byte(data), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -194,5 +194,31 @@ func TestPruneOnlyOldAbandoned(t *testing.T) {
 		if _, err := os.Stat(p); err != nil {
 			t.Errorf("%s pruned: %v", filepath.Base(p), err)
 		}
+	}
+}
+
+func TestPruneSweepsStrayLocksAndTemps(t *testing.T) {
+	dir := Dir(t.TempDir())
+	live := openT(t, dir)
+	t.Cleanup(func() { _ = live.Close(true) })
+	stray := filepath.Join(dir, "gone.lock")
+	tmp := filepath.Join(dir, ".x.json.tmp-1")
+	for _, p := range []string{stray, tmp} {
+		if err := os.WriteFile(p, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	past := time.Now().Add(-2 * time.Hour)
+	if err := os.Chtimes(tmp, past, past); err != nil {
+		t.Fatal(err)
+	}
+	Prune(dir, MaxAge)
+	for _, p := range []string{stray, tmp} {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Errorf("%s not swept", filepath.Base(p))
+		}
+	}
+	if _, err := os.Stat(lockPath(live.Path())); err != nil {
+		t.Errorf("live instance's lock swept: %v", err)
 	}
 }

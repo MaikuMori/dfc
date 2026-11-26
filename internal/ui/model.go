@@ -78,6 +78,7 @@ type Model struct {
 	res      *resumeState
 	editID   string // task the inline editor opened on; "" outside modeEdit
 	editSlug string
+	editOrig string // description the inline editor opened with
 	quitting bool // set on a deliberate quit so the last frame clears the resume record
 }
 
