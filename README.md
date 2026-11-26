@@ -124,12 +124,6 @@ style = "bold yellow"
 
 `--format json` (`{open, done, done_today, by_tag}`) feeds fancier prompts and tmux status lines; bare `dfc count` is human-readable. Add `-a` to count every project instead of the cwd one.
 
-## Unsent drafts and resume
-
-A half-typed capture or edit survives the terminal being closed or killed: the next `dfc` in that project reopens it (`esc` discards it). Quitting with `q` or `ctrl+c` drops it.
-
-On terminals that support the [Program Resume Protocol](https://www.superlogical.com/rex/docs/build/program-resume), the TUI also tells the terminal how to bring it back after a restart: same project, view, filter, sort and cursor, plus the draft.
-
 ## Documentation
 
 - [`skill/SKILL.md`](skill/SKILL.md) — teaches minions to use the CLI.
