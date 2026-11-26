@@ -1,0 +1,3 @@
+kind: added
+body: TUI reopens an unsent capture or edit after the terminal is closed or killed
+time: 2026-11-26T16:33:40.000000-04:00

@@ -110,7 +110,7 @@ func (m *Model) clearMoveSrc() {
 
 func (m Model) updateHelp(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "ctrl+c" {
-		return m, tea.Quit
+		return m.quit()
 	}
 	// Any other keystroke dismisses help and returns to the list.
 	m.mode = modeList
@@ -361,7 +361,7 @@ func (m Model) updateList(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.reloadActive(), nil
 
 	case key.Matches(msg, keys.Quit):
-		return m, tea.Quit
+		return m.quit()
 
 	case key.Matches(msg, keys.Up):
 		m.moveCursor(-1)
@@ -630,7 +630,7 @@ func (m Model) updateList(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 // esc clears the filter and exits.
 func (m Model) updateSearch(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "ctrl+c" {
-		return m, tea.Quit
+		return m.quit()
 	}
 	if msg.Code == tea.KeyEsc {
 		m.searchQuery = ""
@@ -672,7 +672,7 @@ func (m Model) updateSearch(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 // list with the filter still applied; esc returns to the search input.
 func (m Model) updateSaveSearchName(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "ctrl+c" {
-		return m, tea.Quit
+		return m.quit()
 	}
 	if msg.Code == tea.KeyEsc {
 		if m.pendingOverwrite != "" {
@@ -729,6 +729,7 @@ func (m Model) updateSaveSearchName(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) updateInput(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	m.status = ""
 	if m.mode == modeCapture {
 		return m.updateCapture(msg)
 	}
@@ -753,7 +754,7 @@ func (m Model) updateInput(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case msg.String() == "ctrl+c":
-		return m, tea.Quit
+		return m.quit()
 	}
 
 	var cmd tea.Cmd
@@ -788,7 +789,7 @@ func (m Model) updateCapture(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case msg.String() == "ctrl+c":
-		return m, tea.Quit
+		return m.quit()
 	}
 
 	prevLines := m.capArea.LineCount()

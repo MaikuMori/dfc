@@ -3,6 +3,8 @@ package ui
 import (
 	"errors"
 	"os"
+	"os/signal"
+	"syscall"
 
 	tea "charm.land/bubbletea/v2"
 	"golang.org/x/term"
@@ -29,9 +31,10 @@ func attachFile(w *watch.Watcher, path string) bool {
 	return w.Add(path) == nil
 }
 
-// Run launches the TUI bound to the current working directory's project. It
-// returns a friendly error when stdout is not a terminal.
-func Run() error {
+// Run launches the TUI bound to the current working directory's project, or
+// to opts.Project when that project is still registered. It returns a
+// friendly error when stdout is not a terminal.
+func Run(opts Options) error {
 	if !term.IsTerminal(int(os.Stdout.Fd())) {
 		return errors.New("not a terminal — run `dfc c \"...\"` from a non-interactive context")
 	}
@@ -51,14 +54,17 @@ func Run() error {
 	}
 	defer func() { _ = cr.Close() }()
 
-	if err := cr.EnsureProject(resolved.Slug, project.DeriveName(resolved)); err != nil {
+	slug := resolved.Slug
+	if p := opts.Project; p != "" && cr.Registry().Has(p) && storage.ProjectDirExists(p) {
+		slug = p
+	} else if err := cr.EnsureProject(resolved.Slug, project.DeriveName(resolved)); err != nil {
 		return err
 	}
-	if err := cr.Registry().Touch(resolved.Slug); err != nil {
+	if err := cr.Registry().Touch(slug); err != nil {
 		return err
 	}
 
-	store, err := cr.StoreFor(resolved.Slug)
+	store, err := cr.StoreFor(slug)
 	if err != nil {
 		return err
 	}
@@ -94,8 +100,10 @@ func Run() error {
 	// Make sure the search index isn't blank or behind on first launch.
 	cr.EnsureFresh()
 
-	model := New(cr, resolved.Slug, store, tasks, watcher)
-	if len(tasks) == 0 {
+	model := New(cr, slug, store, tasks, watcher)
+	model.res = newResumeState(cwd)
+	model = model.applyOptions(opts)
+	if len(tasks) == 0 && slug == resolved.Slug {
 		if shift, ok := cr.DetectSlugShift(cwd, resolved.Slug); ok {
 			model.status = shift.Hint()
 		}
@@ -106,8 +114,27 @@ func Run() error {
 	// gives us "shift+enter" recognition on terminals that support the
 	// Kitty keyboard protocol (Ghostty, Kitty, Alacritty, WezTerm, etc.).
 	prog := tea.NewProgram(model)
+
+	// A closing terminal sends SIGHUP; quit through the program so the draft
+	// is flushed below and the resume record is left in place.
+	hup := make(chan os.Signal, 1)
+	signal.Notify(hup, syscall.SIGHUP)
+	defer signal.Stop(hup)
+	go func() {
+		if _, ok := <-hup; ok {
+			prog.Quit()
+		}
+	}()
+
 	final, err := prog.Run()
-	if fm, ok := final.(Model); ok && cr.ReloadRegistry() == nil {
+	fm, ok := final.(Model)
+	if !ok {
+		return err
+	}
+	if derr := fm.finishDraft(); derr != nil && err == nil {
+		err = derr
+	}
+	if cr.ReloadRegistry() == nil {
 		if serr := cr.Registry().MarkSeen(fm.seenSlugs()...); serr != nil && err == nil {
 			err = serr
 		}
