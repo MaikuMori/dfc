@@ -23,7 +23,7 @@ var mdParser = parser.New()
 // taskListParser recognizes GFM task-list items (`- [ ]` / `- [x]`). It is
 // separate from mdParser so enabling the GFM extension can't shift the
 // heading/body parse that mdParser drives.
-var taskListParser = parser.New(parser.WithExtensions(extension.TaskListItemParser))
+var taskListParser = parser.New(parser.WithExtensions(extension.NewTaskListItemParser()))
 
 // Checkboxes counts GFM task-list items in a markdown body, returning how many
 // are checked and the total present. A body with no task list returns (0, 0).
