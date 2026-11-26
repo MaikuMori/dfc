@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"os/signal"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -106,6 +107,9 @@ func Run(opts Options) error {
 	model.res = newResumeState(cwd)
 	if model.res != nil {
 		model.res.launch = slug
+		if opts.Launch != "" {
+			model.res.launch = opts.Launch
+		}
 	}
 	model = model.applyOptions(opts)
 	if len(tasks) == 0 && slug == resolved.Slug {
@@ -125,13 +129,20 @@ func Run(opts Options) error {
 	hup := make(chan os.Signal, 1)
 	signal.Notify(hup, syscall.SIGHUP)
 	defer signal.Stop(hup)
+	var hungUp atomic.Bool
 	go func() {
-		if _, ok := <-hup; ok {
-			prog.Quit()
-			// Quit waits while $EDITOR runs; don't outlive the terminal.
-			time.Sleep(2 * time.Second)
-			prog.Kill()
+		if _, ok := <-hup; !ok {
+			return
 		}
+		hungUp.Store(true)
+		// Quit blocks while $EDITOR runs on the event loop, so the deadline
+		// runs on its own: dfc must not outlive its terminal. The state file
+		// already holds everything but the last few hundred ms.
+		go prog.Quit()
+		time.Sleep(2 * time.Second)
+		prog.Kill()
+		time.Sleep(time.Second)
+		os.Exit(0)
 	}()
 
 	final, err := prog.Run()
@@ -144,7 +155,7 @@ func Run(opts Options) error {
 	default:
 		return err
 	}
-	if errors.Is(err, tea.ErrProgramKilled) {
+	if hungUp.Load() && errors.Is(err, tea.ErrProgramKilled) {
 		err = nil
 	}
 	if derr := fm.finishState(); derr != nil && err == nil {

@@ -202,15 +202,18 @@ func TestPruneSweepsStrayLocksAndTemps(t *testing.T) {
 	live := openT(t, dir)
 	t.Cleanup(func() { _ = live.Close(true) })
 	stray := filepath.Join(dir, "gone.lock")
+	young := filepath.Join(dir, "starting.lock")
 	tmp := filepath.Join(dir, ".x.json.tmp-1")
-	for _, p := range []string{stray, tmp} {
+	for _, p := range []string{stray, young, tmp} {
 		if err := os.WriteFile(p, nil, 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
 	past := time.Now().Add(-2 * time.Hour)
-	if err := os.Chtimes(tmp, past, past); err != nil {
-		t.Fatal(err)
+	for _, p := range []string{stray, tmp} {
+		if err := os.Chtimes(p, past, past); err != nil {
+			t.Fatal(err)
+		}
 	}
 	Prune(dir, MaxAge)
 	for _, p := range []string{stray, tmp} {
@@ -218,7 +221,71 @@ func TestPruneSweepsStrayLocksAndTemps(t *testing.T) {
 			t.Errorf("%s not swept", filepath.Base(p))
 		}
 	}
-	if _, err := os.Stat(lockPath(live.Path())); err != nil {
-		t.Errorf("live instance's lock swept: %v", err)
+	for _, p := range []string{lockPath(live.Path()), young} {
+		if _, err := os.Stat(p); err != nil {
+			t.Errorf("%s swept: %v", filepath.Base(p), err)
+		}
+	}
+}
+
+func TestPruneLeavesOtherMachinesAndForeignDotfiles(t *testing.T) {
+	dir := Dir(t.TempDir())
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	remote := filepath.Join(dir, "remote.json")
+	keep := filepath.Join(dir, ".gitignore")
+	if err := os.WriteFile(remote, []byte(`{"view":{},"draft":{"kind":"capture","text":"x"},"machine":"elsewhere"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(keep, []byte("*\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	past := time.Now().Add(-MaxAge - time.Hour)
+	for _, p := range []string{remote, keep} {
+		if err := os.Chtimes(p, past, past); err != nil {
+			t.Fatal(err)
+		}
+	}
+	Prune(dir, MaxAge)
+	for _, p := range []string{remote, keep} {
+		if _, err := os.Stat(p); err != nil {
+			t.Errorf("%s pruned: %v", filepath.Base(p), err)
+		}
+	}
+}
+
+func TestPublishMachineIDAdoptsWinner(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "dfc", "machine-id")
+	first, ok := publishMachineID(path)
+	if !ok {
+		t.Fatal("first publish failed")
+	}
+	second, ok := publishMachineID(path)
+	if !ok || second != first {
+		t.Errorf("second publish = %q, %v; want the first id %q", second, ok, first)
+	}
+	entries, _ := os.ReadDir(filepath.Dir(path))
+	if len(entries) != 1 {
+		t.Errorf("left %d files, want 1", len(entries))
+	}
+}
+
+func TestConcurrentProbesDontSeeEachOther(t *testing.T) {
+	dir := Dir(t.TempDir())
+	path := abandon(t, dir, capture)
+	if err := os.WriteFile(lockPath(path), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.OpenFile(lockPath(path), os.O_RDWR, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+	if !tryLockShared(f) {
+		t.Fatal("could not take a shared probe lock")
+	}
+	if ownerAlive(path) {
+		t.Error("another probe's shared lock read as a live owner")
 	}
 }

@@ -25,6 +25,7 @@ type Options struct {
 	Query   string
 	Sort    string // "modified" or "created"
 	Cursor  string // task id to put the cursor on
+	Launch  string // project the resumed TUI was first started in
 	State   string
 }
 
@@ -98,7 +99,7 @@ func readStateOptions(opts Options) Options {
 		_ = os.Setenv(storage.EnvRoot, root)
 	}
 	v := st.View
-	opts.Project, opts.Global, opts.Query, opts.Sort, opts.Cursor = v.Project, v.Global, v.Query, v.Sort, v.Cursor
+	opts.Project, opts.Global, opts.Query, opts.Sort, opts.Cursor, opts.Launch = v.Project, v.Global, v.Query, v.Sort, v.Cursor, v.Launch
 	return opts
 }
 
@@ -266,9 +267,9 @@ func (m Model) applyOptions(opts Options) Model {
 				m = m.restoreDraft(st)
 			}
 		} else if st, ok := m.recoverState(); ok {
-			otherEdit := st.Draft.Kind == resume.KindEdit && st.Draft.Slug != m.slug
-			if (st.View.Global || otherEdit) && !m.globalView && len(m.core.Registry().Slugs()) > 1 {
-				// The draft may target, or edit a task in, another project.
+			if (st.View.Global || st.Draft.Slug != m.slug) && !m.globalView && len(m.core.Registry().Slugs()) > 1 {
+				// The draft targets, or edits a task in, another project;
+				// show it where its result will be listed.
 				m.globalView = true
 				if err := m.refreshWatches(); err != nil {
 					m.err = err
@@ -276,7 +277,7 @@ func (m Model) applyOptions(opts Options) Model {
 				m = m.reloadActive()
 			}
 			m = m.restoreDraft(st)
-			if m.mode != modeList {
+			if m.mode != modeList && m.status == "" {
 				m.status = "recovered an unsent draft; esc discards it"
 			}
 		}
@@ -289,24 +290,36 @@ func (m Model) applyOptions(opts Options) Model {
 
 // recoverState claims the newest state file abandoned by a dfc that is no
 // longer running whose draft belongs here: made in a TUI launched in or
-// showing the current project, or aimed at the current project. An edit draft also needs its task to still
-// exist.
+// showing the current project, or aimed at the current project. Edits of
+// tasks that are gone come last; restoreDraft reopens their text as a
+// capture.
 func (m Model) recoverState() (resume.State, bool) {
+	var goneEdits []string
 	for _, path := range resume.Orphans(filepath.Dir(m.res.inst.Path())) {
 		st, ok := resume.Read(path)
 		if !ok || (st.Draft.Slug != m.slug && st.View.Project != m.slug && st.View.Launch != m.slug) {
 			continue
 		}
-		if d := st.Draft; d.Kind == resume.KindEdit {
-			if path, err := m.core.FindByIDInProject(d.TaskID, d.Slug); err != nil || path == "" {
-				continue
-			}
+		if d := st.Draft; d.Kind == resume.KindEdit && !m.taskExists(d.TaskID) {
+			goneEdits = append(goneEdits, path)
+			continue
 		}
 		if st, ok := m.res.inst.Claim(path); ok {
 			return st, true
 		}
 	}
+	for _, path := range goneEdits {
+		if st, ok := m.res.inst.Claim(path); ok {
+			return st, true
+		}
+	}
 	return resume.State{}, false
+}
+
+// taskExists reports whether a task with id is on disk in any project.
+func (m Model) taskExists(id string) bool {
+	_, path, err := m.core.FindByID(id)
+	return err == nil && path != ""
 }
 
 // moveCursorTo puts the cursor on the task with id, if listed.
@@ -359,8 +372,10 @@ func (m Model) restoreDraft(st resume.State) Model {
 			m.status = "the edited task is gone; enter saves the text as a new task"
 			break
 		}
+		// The task may have moved projects; follow it, not the saved slug.
+		t := m.tasks[m.cursor]
 		m.mode = modeEdit
-		m.editID, m.editSlug, m.editOrig = d.TaskID, d.Slug, m.tasks[m.cursor].Description
+		m.editID, m.editSlug, m.editOrig = t.ID, t.ProjectSlug, t.Description
 		m.input.Reset()
 		m.input.SetValue(d.Text)
 		m.input.CursorEnd()

@@ -784,7 +784,9 @@ func (m Model) updateCapture(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		desc, details := capture.SplitHeading(text)
 		if err := m.commitCapture(desc, details); err != nil {
+			// Keep the overlay and its draft so the text isn't lost.
 			m.err = err
+			return m, nil
 		}
 		m.exitInput()
 		if m.searchQuery != "" {

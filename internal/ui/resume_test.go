@@ -2,7 +2,9 @@ package ui
 
 import (
 	"os"
+	"runtime"
 	"slices"
+	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -406,5 +408,54 @@ func TestResumedEditOfMovedTaskKeepsText(t *testing.T) {
 	r := sibling(t, m).applyOptions(readStateOptions(Options{State: path}))
 	if r.mode != modeCapture || r.capArea.Value() == "" || r.status == "" {
 		t.Errorf("mode = %v, text = %q, status = %q", r.mode, r.capArea.Value(), r.status)
+	}
+}
+
+func TestLaunchRecoversEditOfDeletedTaskAsCapture(t *testing.T) {
+	m := newResumeModel(t)
+	e := press(t, sibling(t, m), runeKey('e'), runeKey('!'))
+	e.editID = "01AAAAAAAAAAAAAAAAAAAAAAAA"
+	abandon(t, e)
+
+	r := sibling(t, m).applyOptions(Options{})
+	if r.mode != modeCapture || r.capArea.Value() == "" || r.status == "" {
+		t.Errorf("mode = %v, text = %q, status = %q", r.mode, r.capArea.Value(), r.status)
+	}
+}
+
+func TestRecoveryKeepsGoneTargetWarning(t *testing.T) {
+	m := newResumeModel(t)
+	c := press(t, sibling(t, m), runeKey('c'), runeKey('x'))
+	c.capTargetSlug = "deleted-project"
+	abandon(t, c)
+
+	r := sibling(t, m).applyOptions(Options{})
+	if r.mode != modeCapture || !strings.Contains(r.status, "deleted-project") {
+		t.Errorf("mode = %v, status = %q", r.mode, r.status)
+	}
+}
+
+func TestResumeCarriesLaunchProject(t *testing.T) {
+	m := newResumeModel(t)
+	m.res.launch = "home"
+	path := abandon(t, m)
+	if got := readStateOptions(Options{State: path}).Launch; got != "home" {
+		t.Errorf("Launch = %q, want home", got)
+	}
+}
+
+func TestFailedCaptureKeepsOverlayAndDraft(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("needs a directory the user can't write")
+	}
+	m := press(t, newResumeModel(t), runeKey('c'), runeKey('x'))
+	dir := m.store.Dir()
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if m.err == nil || m.mode != modeCapture || m.capArea.Value() != "x" {
+		t.Errorf("err = %v, mode = %v, text = %q; want the overlay kept with an error", m.err, m.mode, m.capArea.Value())
 	}
 }

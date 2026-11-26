@@ -150,7 +150,7 @@ func (i *Instance) Close(discard bool) error {
 // untouched unless it was taken.
 func (i *Instance) Claim(src string) (State, bool) {
 	src, err := filepath.Abs(src)
-	if err != nil || filepath.Dir(src) != filepath.Dir(i.path) || filepath.Ext(src) != stateExt || src == i.path {
+	if err != nil || !sameDir(filepath.Dir(src), filepath.Dir(i.path)) || filepath.Ext(src) != stateExt || src == i.path {
 		return State{}, false
 	}
 	if r, ok := readRecord(src); !ok || r.Machine != machineID() || ownerAlive(src) {
@@ -222,26 +222,64 @@ func Prune(dir string, maxAge time.Duration) {
 		}
 		switch {
 		case filepath.Ext(e.Name()) == stateExt:
+			// Another machine's lock can't be seen from here.
+			if r, ok := readRecord(path); ok && r.Machine != "" && r.Machine != machineID() {
+				continue
+			}
 			if info.ModTime().Before(now.Add(-maxAge)) && !ownerAlive(path) {
 				_ = os.Remove(path)
 				_ = os.Remove(lockPath(path))
 			}
 		case filepath.Ext(e.Name()) == lockExt:
-			// A lock whose state file is gone, left by a crash.
+			// A lock whose state file is gone, left by a crash. Young ones may
+			// belong to an instance between creating and locking it.
 			state := strings.TrimSuffix(path, lockExt) + stateExt
-			if _, err := os.Stat(state); os.IsNotExist(err) && !ownerAlive(state) {
+			if _, err := os.Stat(state); os.IsNotExist(err) && info.ModTime().Before(now.Add(-time.Hour)) && !ownerAlive(state) {
 				_ = os.Remove(path)
 			}
-		case strings.HasPrefix(e.Name(), ".") && info.ModTime().Before(now.Add(-time.Hour)):
+		case strings.HasPrefix(e.Name(), ".") && strings.Contains(e.Name(), stateExt+".tmp-") && info.ModTime().Before(now.Add(-time.Hour)):
 			// A temp file from a write that was interrupted.
 			_ = os.Remove(path)
 		}
 	}
 }
 
+func sameDir(a, b string) bool {
+	if a == b {
+		return true
+	}
+	ai, aerr := os.Stat(a)
+	bi, berr := os.Stat(b)
+	return aerr == nil && berr == nil && os.SameFile(ai, bi)
+}
+
+// publishMachineID creates the machine id file, or adopts the one another
+// process created first: the id is written to a temp file and hard-linked
+// into place, which fails rather than replacing an existing file.
+func publishMachineID(path string) (string, bool) {
+	if os.MkdirAll(filepath.Dir(path), 0o700) != nil {
+		return "", false
+	}
+	id := strings.ToLower(ulid.Make().String())
+	tmp := path + "." + id
+	if fsutil.WriteFileAtomic(tmp, []byte(id+"\n"), 0o600) != nil {
+		return "", false
+	}
+	defer func() { _ = os.Remove(tmp) }()
+	if os.Link(tmp, path) == nil {
+		return id, true
+	}
+	if data, err := os.ReadFile(path); err == nil && strings.TrimSpace(string(data)) != "" {
+		return strings.TrimSpace(string(data)), true
+	}
+	return "", false
+}
+
 func lockPath(state string) string { return strings.TrimSuffix(state, stateExt) + lockExt }
 
-// ownerAlive reports whether a running instance holds state's lock. A lock
+// ownerAlive reports whether a running instance holds state's lock. The probe
+// takes a shared lock, which only an owner's exclusive lock refuses, so two
+// instances probing at once don't mistake each other for the owner. A lock
 // taken through another descriptor conflicts even within this process, so an
 // instance sees its own file as alive.
 func ownerAlive(state string) bool {
@@ -250,7 +288,7 @@ func ownerAlive(state string) bool {
 		return false
 	}
 	defer func() { _ = f.Close() }()
-	return !tryLock(f)
+	return !tryLockShared(f)
 }
 
 func readRecord(path string) (record, bool) {
@@ -275,21 +313,21 @@ func readRecord(path string) (record, bool) {
 // EnvMachineID overrides the machine id (tests).
 const EnvMachineID = "DFC_MACHINE_ID"
 
-// machineID identifies this machine. It lives in the user cache dir rather
-// than the data root, which may be synced between machines, and is
-// generated once because hostnames change with the network.
+// machineID identifies this machine. It lives in the user config dir rather
+// than the data root, which may be synced between machines, or a cache that
+// may be purged, and is generated once because hostnames change with the
+// network.
 var machineID = sync.OnceValue(func() string {
 	if v := os.Getenv(EnvMachineID); v != "" {
 		return v
 	}
-	dir, err := os.UserCacheDir()
+	dir, err := os.UserConfigDir()
 	if err == nil {
 		path := filepath.Join(dir, "dfc", "machine-id")
 		if data, err := os.ReadFile(path); err == nil && len(strings.TrimSpace(string(data))) > 0 {
 			return strings.TrimSpace(string(data))
 		}
-		id := strings.ToLower(ulid.Make().String())
-		if os.MkdirAll(filepath.Dir(path), 0o700) == nil && fsutil.WriteFileAtomic(path, []byte(id+"\n"), 0o600) == nil {
+		if id, ok := publishMachineID(path); ok {
 			return id
 		}
 	}
