@@ -237,6 +237,7 @@ func (m *Model) relayout() {
 	case modeCapture:
 		// Always size to current screen width so wrap math is accurate.
 		m.capArea.SetWidth(m.width)
+		resizeQuickCapture(&m.capArea)
 		listHeight -= captureAreaHeight(&m.capArea)
 	case modeEdit, modeSearch, modeSaveSearchName:
 		listHeight -= inputHeight

@@ -6,6 +6,7 @@ import "github.com/alecthomas/kong"
 type CLI struct {
 	VersionFlag kong.VersionFlag `name:"version" help:"Print version information and exit."`
 
+	Tui        TuiCmd           `cmd:"" name:"_tui" hidden:"" help:"Open the TUI (same as bare dfc) with an initial project, view, filter or cursor."`
 	Capture    CaptureCmd       `cmd:"" aliases:"c" help:"Capture a task. With no description, opens an inline prompt."`
 	Cc         GlobalCaptureCmd `cmd:"" help:"Fuzzy-pick a project, then capture into it."`
 	Ls         LsCmd            `cmd:"" aliases:"list" help:"List tasks (cwd project by default)."`

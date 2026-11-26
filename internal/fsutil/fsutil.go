@@ -7,11 +7,22 @@ import (
 	"path/filepath"
 )
 
+// ReplaceFile is WriteFileAtomic without the fsync: a killed process still
+// leaves either the old or the new file, but a power loss may leave neither.
+// For state rewritten often enough that a sync per write would show.
+func ReplaceFile(path string, data []byte, perm os.FileMode) error {
+	return writeAtomic(path, data, perm, false)
+}
+
 // WriteFileAtomic writes data to a temp file in path's directory and renames
 // it over path. A crash or partial write can never leave path truncated: a
 // reader sees either the previous complete file or the new one. The temp file
 // is removed on any error before the rename.
 func WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
+	return writeAtomic(path, data, perm, true)
+}
+
+func writeAtomic(path string, data []byte, perm os.FileMode, sync bool) error {
 	f, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".tmp-*")
 	if err != nil {
 		return err
@@ -27,9 +38,11 @@ func WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
 		_ = f.Close()
 		return err
 	}
-	if err := f.Sync(); err != nil {
-		_ = f.Close()
-		return err
+	if sync {
+		if err := f.Sync(); err != nil {
+			_ = f.Close()
+			return err
+		}
 	}
 	if err := f.Close(); err != nil {
 		return err

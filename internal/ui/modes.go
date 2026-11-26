@@ -2,6 +2,7 @@ package ui
 
 import (
 	"cmp"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -110,7 +111,7 @@ func (m *Model) clearMoveSrc() {
 
 func (m Model) updateHelp(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "ctrl+c" {
-		return m, tea.Quit
+		return m.quit()
 	}
 	// Any other keystroke dismisses help and returns to the list.
 	m.mode = modeList
@@ -361,7 +362,7 @@ func (m Model) updateList(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.reloadActive(), nil
 
 	case key.Matches(msg, keys.Quit):
-		return m, tea.Quit
+		return m.quit()
 
 	case key.Matches(msg, keys.Up):
 		m.moveCursor(-1)
@@ -473,6 +474,7 @@ func (m Model) updateList(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.mode = modeEdit
+		m.editID, m.editSlug, m.editOrig = m.tasks[m.cursor].ID, m.tasks[m.cursor].ProjectSlug, m.tasks[m.cursor].Description
 		m.input.Reset()
 		m.input.SetValue(m.tasks[m.cursor].Description)
 		m.input.CursorEnd()
@@ -630,7 +632,7 @@ func (m Model) updateList(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 // esc clears the filter and exits.
 func (m Model) updateSearch(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "ctrl+c" {
-		return m, tea.Quit
+		return m.quit()
 	}
 	if msg.Code == tea.KeyEsc {
 		m.searchQuery = ""
@@ -672,7 +674,7 @@ func (m Model) updateSearch(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 // list with the filter still applied; esc returns to the search input.
 func (m Model) updateSaveSearchName(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "ctrl+c" {
-		return m, tea.Quit
+		return m.quit()
 	}
 	if msg.Code == tea.KeyEsc {
 		if m.pendingOverwrite != "" {
@@ -729,6 +731,7 @@ func (m Model) updateSaveSearchName(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) updateInput(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	m.status = ""
 	if m.mode == modeCapture {
 		return m.updateCapture(msg)
 	}
@@ -744,7 +747,9 @@ func (m Model) updateInput(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if err := m.commitEdit(text); err != nil {
+			// Keep the editor and its draft so the text isn't lost.
 			m.err = err
+			return m, nil
 		}
 		m.exitInput()
 		if m.searchQuery != "" {
@@ -753,7 +758,7 @@ func (m Model) updateInput(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case msg.String() == "ctrl+c":
-		return m, tea.Quit
+		return m.quit()
 	}
 
 	var cmd tea.Cmd
@@ -779,7 +784,9 @@ func (m Model) updateCapture(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		desc, details := capture.SplitHeading(text)
 		if err := m.commitCapture(desc, details); err != nil {
+			// Keep the overlay and its draft so the text isn't lost.
 			m.err = err
+			return m, nil
 		}
 		m.exitInput()
 		if m.searchQuery != "" {
@@ -788,7 +795,7 @@ func (m Model) updateCapture(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case msg.String() == "ctrl+c":
-		return m, tea.Quit
+		return m.quit()
 	}
 
 	prevLines := m.capArea.LineCount()
@@ -838,8 +845,28 @@ func (m *Model) commitCapture(desc, details string) error {
 	return nil
 }
 
+// commitEdit renames the task the editor opened on, found by id even when a
+// reload has dropped it from the visible rows.
 func (m *Model) commitEdit(desc string) error {
-	t := m.tasks[m.cursor]
+	var t storage.Task
+	if i := indexByIDSlug(m.tasks, m.editID, m.editSlug, true); i >= 0 {
+		t = m.tasks[i]
+	} else {
+		path, err := m.core.FindByIDInProject(m.editID, m.editSlug)
+		if err != nil {
+			return err
+		}
+		if path == "" {
+			return errors.New("the task being edited no longer exists; esc discards the edit")
+		}
+		store, err := m.core.StoreFor(m.editSlug)
+		if err != nil {
+			return err
+		}
+		if t, err = store.Load(path); err != nil {
+			return err
+		}
+	}
 	if err := m.core.RenameTask(&t, desc); err != nil {
 		return err
 	}
@@ -857,6 +884,7 @@ func (m *Model) exitInput() {
 	// Always drop any pending capture target — picker cancel, capture
 	// cancel, commit success, and commit failure all flow through here.
 	m.capTargetSlug = ""
+	m.editID, m.editSlug, m.editOrig = "", "", ""
 	m.pendingOverwrite = ""
 	m.relayout()
 }

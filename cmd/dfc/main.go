@@ -26,7 +26,7 @@ func main() {
 	completeWithAliases(parser, kongplete.WithPredictors(cli.Predictors()))
 
 	if len(os.Args) == 1 {
-		if err := ui.Run(); err != nil {
+		if err := ui.Run(ui.Options{}); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
