@@ -73,8 +73,11 @@ type Model struct {
 	// readIDs holds tasks read this session: the cursor reached them, `R` marked
 	// them, or this TUI captured them. Shared across Model copies.
 	readIDs map[string]bool
-	// res reports how to resume this TUI and keeps its draft; nil disables both.
+	// res reports how to resume this TUI and keeps its state file; nil
+	// disables both.
 	res      *resumeState
+	editID   string // task the inline editor opened on; "" outside modeEdit
+	editSlug string
 	quitting bool // set on a deliberate quit so the last frame clears the resume record
 }
 
@@ -129,13 +132,19 @@ func subscribeIfLive(w *watch.Watcher) <-chan watch.Event {
 }
 
 func (m Model) Init() tea.Cmd {
+	if m.res != nil && !m.res.ticking {
+		m.res.ticking = true
+		m.res.pending = m.currentState()
+		return tea.Batch(waitForChange(m.watchSub), saveTick())
+	}
 	return waitForChange(m.watchSub)
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if dm, ok := msg.(draftSaveMsg); ok {
-		if m.res != nil && dm.gen == m.res.gen {
-			if err := m.flushDraft(); err != nil {
+	if _, ok := msg.(stateSaveMsg); ok {
+		if m.res != nil {
+			m.res.ticking = false
+			if err := m.flushState(); err != nil {
 				m.err = err
 			}
 		}
@@ -149,7 +158,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if nm.cursor >= 0 && nm.cursor < len(nm.tasks) {
 		nm.readIDs[nm.tasks[nm.cursor].ID] = true
 	}
-	return nm, nm.trackDraft(cmd)
+	return nm.trackState(cmd)
 }
 
 // isUnread reports whether t is an open task created since its project was last

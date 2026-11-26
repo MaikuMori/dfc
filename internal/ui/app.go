@@ -38,6 +38,7 @@ func Run(opts Options) error {
 	if !term.IsTerminal(int(os.Stdout.Fd())) {
 		return errors.New("not a terminal — run `dfc c \"...\"` from a non-interactive context")
 	}
+	opts = readStateOptions(opts)
 
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -115,8 +116,8 @@ func Run(opts Options) error {
 	// Kitty keyboard protocol (Ghostty, Kitty, Alacritty, WezTerm, etc.).
 	prog := tea.NewProgram(model)
 
-	// A closing terminal sends SIGHUP; quit through the program so the draft
-	// is flushed below and the resume record is left in place.
+	// A closing terminal sends SIGHUP; quit through the program so the state
+	// file is flushed below and the resume record is left in place.
 	hup := make(chan os.Signal, 1)
 	signal.Notify(hup, syscall.SIGHUP)
 	defer signal.Stop(hup)
@@ -127,11 +128,16 @@ func Run(opts Options) error {
 	}()
 
 	final, err := prog.Run()
-	fm, ok := final.(Model)
-	if !ok {
+	var fm Model
+	switch f := final.(type) {
+	case Model:
+		fm = f
+	case *Model:
+		fm = *f
+	default:
 		return err
 	}
-	if derr := fm.finishDraft(); derr != nil && err == nil {
+	if derr := fm.finishState(); derr != nil && err == nil {
 		err = derr
 	}
 	if cr.ReloadRegistry() == nil {

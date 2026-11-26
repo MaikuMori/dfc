@@ -2,6 +2,7 @@ package ui
 
 import (
 	"cmp"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -473,6 +474,7 @@ func (m Model) updateList(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.mode = modeEdit
+		m.editID, m.editSlug = m.tasks[m.cursor].ID, m.tasks[m.cursor].ProjectSlug
 		m.input.Reset()
 		m.input.SetValue(m.tasks[m.cursor].Description)
 		m.input.CursorEnd()
@@ -840,7 +842,11 @@ func (m *Model) commitCapture(desc, details string) error {
 }
 
 func (m *Model) commitEdit(desc string) error {
-	t := m.tasks[m.cursor]
+	i := indexByIDSlug(m.tasks, m.editID, m.editSlug, true)
+	if i < 0 {
+		return errors.New("the task being edited is no longer listed")
+	}
+	t := m.tasks[i]
 	if err := m.core.RenameTask(&t, desc); err != nil {
 		return err
 	}
@@ -858,6 +864,7 @@ func (m *Model) exitInput() {
 	// Always drop any pending capture target — picker cancel, capture
 	// cancel, commit success, and commit failure all flow through here.
 	m.capTargetSlug = ""
+	m.editID, m.editSlug = "", ""
 	m.pendingOverwrite = ""
 	m.relayout()
 }

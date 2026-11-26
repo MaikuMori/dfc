@@ -1,27 +1,59 @@
 package ui
 
 import (
-	"encoding/json"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"slices"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/MaikuMori/dfc/internal/resume"
+	"github.com/MaikuMori/dfc/internal/storage"
 )
 
 func runeKey(r rune) tea.KeyPressMsg { return tea.KeyPressMsg{Code: r, Text: string(r)} }
 
-// newResumeModel is the per-project "work" model with resume state whose
-// draft file lives under a temp dir.
+func resumeDir(t *testing.T) string {
+	t.Helper()
+	root, err := storage.Root()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resume.Dir(root)
+}
+
+func withResume(t *testing.T, m Model) Model {
+	t.Helper()
+	inst, err := resume.Open(resumeDir(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = inst.Close(true) })
+	m.res = &resumeState{exe: "/usr/local/bin/dfc", dir: "/src/work", inst: inst}
+	return m
+}
+
+// newResumeModel is the per-project "work" model (plus a "home" project)
+// with its own state file.
 func newResumeModel(t *testing.T) Model {
 	t.Helper()
-	m := newPerProjectMoveModel(t)
-	m.res = &resumeState{exe: "/usr/local/bin/dfc", dir: "/src/work", draftPath: resume.NewPath(t.TempDir())}
-	return m
+	return withResume(t, newPerProjectMoveModel(t))
+}
+
+// sibling is a second instance over the same data, as a relaunch would be.
+func sibling(t *testing.T, m Model) Model {
+	t.Helper()
+	store, err := m.core.StoreFor("work")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tasks, err := store.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := New(m.core, "work", store, tasks, nil)
+	n.width, n.height = 80, 24
+	n.relayout()
+	return withResume(t, n)
 }
 
 func press(t *testing.T, m Model, keys ...tea.KeyPressMsg) Model {
@@ -33,255 +65,234 @@ func press(t *testing.T, m Model, keys ...tea.KeyPressMsg) Model {
 	return m
 }
 
-// settle delivers the pending debounced draft save.
 func settle(m Model) Model {
-	next, _ := m.Update(draftSaveMsg{gen: m.res.gen})
+	next, _ := m.Update(stateSaveMsg{})
 	return next.(Model)
 }
 
-func TestProgramResumeArgs(t *testing.T) {
+func saved(t *testing.T, m Model) resume.State {
+	t.Helper()
+	st, _ := resume.Read(m.res.inst.Path())
+	return st
+}
+
+// abandon exits m without a deliberate quit, as a closed terminal does.
+func abandon(t *testing.T, m Model) string {
+	t.Helper()
+	if err := m.finishState(); err != nil {
+		t.Fatal(err)
+	}
+	return m.res.inst.Path()
+}
+
+func TestProgramResumeIsStateFile(t *testing.T) {
 	m := newResumeModel(t)
 	pr := m.programResume()
-	if pr == nil {
-		t.Fatal("programResume = nil")
+	want := []string{"/usr/local/bin/dfc", "_tui", "--state", m.res.inst.Path()}
+	if pr == nil || !slices.Equal(pr.Args, want) || pr.Dir != "/src/work" {
+		t.Fatalf("programResume = %+v, want %q in /src/work", pr, want)
 	}
-	want := []string{"/usr/local/bin/dfc", "tui", "--project=work", "--cursor=" + m.tasks[m.cursor].ID}
-	if !slices.Equal(pr.Args, want) {
-		t.Errorf("Args = %q, want %q", pr.Args, want)
-	}
-	if pr.Dir != "/src/work" {
-		t.Errorf("Dir = %q", pr.Dir)
-	}
-
-	m.globalView = true
-	m.searchQuery = "-#later"
-	m.sortKey = sortByCreated
-	m.tasks = nil
-	want = []string{"/usr/local/bin/dfc", "tui", "--project=work", "--global", "--query=-#later", "--sort=created"}
+	m = press(t, m, runeKey('k'), runeKey('c'), runeKey('x'))
 	if got := m.programResume().Args; !slices.Equal(got, want) {
-		t.Errorf("Args = %q, want %q", got, want)
+		t.Errorf("Args changed with the view: %q", got)
 	}
 }
 
-func TestProgramResumeNilWithoutState(t *testing.T) {
-	m := newPerProjectMoveModel(t)
-	if pr := m.programResume(); pr != nil {
-		t.Errorf("programResume = %+v, want nil", pr)
-	}
-}
-
-func TestQuitClearsResume(t *testing.T) {
-	m := press(t, newResumeModel(t), runeKey('q'))
-	if !m.quitting {
-		t.Fatal("q did not mark quitting")
-	}
-	if pr := m.View().ProgramResume; pr != nil {
-		t.Errorf("last frame ProgramResume = %+v, want nil", pr)
-	}
-}
-
-func TestCaptureDraftSavedAndRestored(t *testing.T) {
-	m := press(t, newResumeModel(t), runeKey('c'), runeKey('h'), runeKey('i'))
-	if m.mode != modeCapture {
-		t.Fatalf("mode = %v, want modeCapture", m.mode)
-	}
-	path := m.res.draftPath
-	if d := resume.Load(path); !d.IsZero() {
-		t.Fatalf("draft written before the debounce: %+v", d)
-	}
-	if !slices.Contains(m.programResume().Args, "--draft="+path) {
-		t.Errorf("Args %q lack --draft", m.programResume().Args)
-	}
-
-	settle(m)
-	want := resume.Draft{Kind: resume.KindCapture, Text: "hi", Slug: "work"}
-	if d := resume.Load(path); d != want {
-		t.Fatalf("saved draft = %+v, want %+v", d, want)
-	}
-
-	r := newResumeModel(t)
-	r = r.applyOptions(Options{Draft: path})
-	if r.mode != modeCapture || r.capArea.Value() != "hi" {
-		t.Fatalf("restored mode = %v, text = %q", r.mode, r.capArea.Value())
-	}
-	if d := resume.Load(r.res.draftPath); d != want {
-		t.Errorf("restored draft not saved under the new instance: %+v", d)
-	}
-	if d := resume.Load(path); !d.IsZero() {
-		t.Errorf("resumed draft left at its old path: %+v", d)
-	}
-}
-
-func TestCommittedCaptureRemovesDraft(t *testing.T) {
+func TestQuitClearsResumeAndState(t *testing.T) {
 	m := settle(press(t, newResumeModel(t), runeKey('c'), runeKey('x')))
-	path := m.res.draftPath
-	m = settle(press(t, m, tea.KeyPressMsg{Code: tea.KeyEnter}))
+	m = press(t, m, tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	if !m.quitting || m.View().ProgramResume != nil {
+		t.Fatalf("quitting = %v, ProgramResume = %+v", m.quitting, m.View().ProgramResume)
+	}
+	if err := m.finishState(); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := resume.Read(m.res.inst.Path()); ok {
+		t.Error("state file survived a deliberate quit")
+	}
+}
+
+func TestStateSavesAreThrottled(t *testing.T) {
+	m := newResumeModel(t)
+	next, cmd := m.Update(runeKey('c'))
+	m = next.(Model)
+	if !m.res.ticking || cmd == nil {
+		t.Fatal("no save scheduled after a change")
+	}
+	m = press(t, m, runeKey('h'), runeKey('i'))
+	if _, ok := resume.Read(m.res.inst.Path()); ok {
+		t.Fatal("state written before the tick")
+	}
+	m = settle(m)
+	st := saved(t, m)
+	if st.Draft != (resume.Draft{Kind: resume.KindCapture, Text: "hi", Slug: "work"}) || st.View.Project != "work" {
+		t.Errorf("saved state = %+v", st)
+	}
+	if m.res.ticking {
+		t.Error("tick still marked pending after it fired")
+	}
+}
+
+func TestCommittedCaptureDropsDraftAtOnce(t *testing.T) {
+	m := settle(press(t, newResumeModel(t), runeKey('c'), runeKey('x')))
+	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if m.mode != modeList {
 		t.Fatalf("mode = %v after enter", m.mode)
 	}
-	if d := resume.Load(path); !d.IsZero() {
-		t.Errorf("draft survived commit: %+v", d)
+	if d := saved(t, m).Draft; !d.IsZero() {
+		t.Errorf("draft still on disk right after commit: %+v", d)
 	}
 }
 
-func TestEditDraftOnlyWhenChanged(t *testing.T) {
+func TestEditDraftFollowsEditedTask(t *testing.T) {
 	m := press(t, newResumeModel(t), runeKey('e'))
-	if m.mode != modeEdit {
-		t.Fatalf("mode = %v, want modeEdit", m.mode)
-	}
 	if d := m.currentDraft(); !d.IsZero() {
 		t.Fatalf("unchanged edit is a draft: %+v", d)
 	}
 	task := m.tasks[m.cursor]
-	m = settle(press(t, m, runeKey('!')))
+	m = press(t, m, runeKey('!'))
+	m.cursor = 0 // a watcher reload moved the cursor
 	want := resume.Draft{Kind: resume.KindEdit, Text: task.Description + "!", Slug: "work", TaskID: task.ID}
-	if d := resume.Load(m.res.draftPath); d != want {
-		t.Fatalf("saved draft = %+v, want %+v", d, want)
+	if d := m.currentDraft(); d != want {
+		t.Fatalf("draft = %+v, want %+v", d, want)
 	}
-
-	r := m
-	r.exitInput()
-	r.cursor = 0
-	r.res = &resumeState{draftPath: resume.NewPath(t.TempDir())}
-	r = r.applyOptions(Options{Draft: m.res.draftPath})
-	if r.mode != modeEdit || r.tasks[r.cursor].ID != task.ID || r.input.Value() != want.Text {
-		t.Errorf("restored mode = %v, task = %s, text = %q", r.mode, r.tasks[r.cursor].ID, r.input.Value())
+	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if i := indexByIDSlug(m.tasks, task.ID, "work", true); i < 0 || m.tasks[i].Description != want.Text {
+		t.Errorf("edit not committed to the task it opened on")
 	}
 }
 
-func TestQuitDropsDraft(t *testing.T) {
-	m := settle(press(t, newResumeModel(t), runeKey('c'), runeKey('x')))
-	path := m.res.draftPath
-	m = press(t, m, tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
-	if !m.quitting {
-		t.Fatal("ctrl+c did not mark quitting")
+func TestResumeRestoresViewAndDraft(t *testing.T) {
+	m := newResumeModel(t)
+	target := m.tasks[0]
+	m = press(t, m, runeKey('c'), runeKey('h'), runeKey('i'))
+	m.globalView, m.sortKey, m.searchQuery = true, sortByCreated, "task"
+	m.moveCursorTo(target.ID)
+	path := abandon(t, m)
+
+	r := sibling(t, m).applyOptions(readStateOptions(Options{State: path}))
+	if !r.globalView || r.sortKey != sortByCreated || r.searchQuery != "task" || r.tasks[r.cursor].ID != target.ID {
+		t.Errorf("view: global = %v, sort = %v, query = %q, cursor on %s", r.globalView, r.sortKey, r.searchQuery, r.tasks[r.cursor].ID)
 	}
-	if err := m.finishDraft(); err != nil {
-		t.Fatal(err)
+	if r.mode != modeCapture || r.capArea.Value() != "hi" {
+		t.Errorf("draft: mode = %v, text = %q", r.mode, r.capArea.Value())
 	}
-	if d := resume.Load(path); !d.IsZero() {
-		t.Errorf("draft survived quit: %+v", d)
+	if r.status != "" {
+		t.Errorf("resume showed the recovery hint %q", r.status)
+	}
+	if _, ok := resume.Read(path); ok {
+		t.Error("resumed state left at its old path")
+	}
+	if d := saved(t, r).Draft; d.Text != "hi" {
+		t.Errorf("draft not saved under the new instance: %+v", d)
 	}
 }
 
-func TestUnsavedDraftFlushedOnExit(t *testing.T) {
-	m := press(t, newResumeModel(t), runeKey('c'), runeKey('x'))
-	if err := m.finishDraft(); err != nil {
+func TestResumeDoesNotTakeAnotherTabsDraft(t *testing.T) {
+	m := newResumeModel(t)
+	withDraft := abandon(t, settle(press(t, m, runeKey('c'), runeKey('x'))))
+	plain := abandon(t, settle(press(t, sibling(t, m), runeKey('k'))))
+
+	r := sibling(t, m).applyOptions(readStateOptions(Options{State: plain}))
+	if r.mode != modeList {
+		t.Errorf("draft-free resume opened mode %v", r.mode)
+	}
+	if _, ok := resume.Read(withDraft); !ok {
+		t.Error("the other tab's draft was taken")
+	}
+}
+
+func TestLaunchRecoversOrphanedCapture(t *testing.T) {
+	m := newResumeModel(t)
+	home := press(t, sibling(t, m), runeKey('c'))
+	home.capTargetSlug = "home"
+	other := abandon(t, settle(press(t, home, runeKey('h'))))
+	abandon(t, settle(press(t, m, runeKey('c'), runeKey('l'), runeKey('o'), runeKey('n'), runeKey('g'))))
+
+	r := sibling(t, m).applyOptions(Options{})
+	if r.mode != modeCapture || r.capArea.Value() != "long" || r.capTargetSlug != "" {
+		t.Fatalf("mode = %v, text = %q, target = %q", r.mode, r.capArea.Value(), r.capTargetSlug)
+	}
+	if r.status == "" {
+		t.Error("no hint for the recovered draft")
+	}
+	if st, ok := resume.Read(other); !ok || st.Draft.Slug != "home" {
+		t.Errorf("another project's draft was touched: %+v, %v", st, ok)
+	}
+	if r = press(t, r, runeKey('!')); r.status != "" {
+		t.Errorf("hint %q survived typing", r.status)
+	}
+}
+
+func TestResumedEditSurvivesFilter(t *testing.T) {
+	m := press(t, newResumeModel(t), runeKey('e'))
+	task := m.tasks[m.cursor]
+	m = settle(press(t, m, runeKey('!')))
+	m.searchQuery = "nomatch"
+	m.res.pending = m.currentState()
+	if err := m.flushState(); err != nil {
 		t.Fatal(err)
 	}
-	if d := resume.Load(m.res.draftPath); d.Text != "x" {
-		t.Errorf("draft = %+v, want text x", d)
+	path := abandon(t, m)
+
+	r := sibling(t, m).applyOptions(readStateOptions(Options{State: path}))
+	if r.mode != modeEdit || r.editID != task.ID || r.input.Value() != task.Description+"!" {
+		t.Fatalf("mode = %v, editing %s, text = %q", r.mode, r.editID, r.input.Value())
+	}
+	if r.searchQuery != "" {
+		t.Errorf("filter %q kept over the edit", r.searchQuery)
+	}
+}
+
+func TestLaunchRecoversOrphanedEdit(t *testing.T) {
+	m := press(t, newResumeModel(t), runeKey('e'))
+	task := m.tasks[m.cursor]
+	abandon(t, settle(press(t, m, runeKey('!'))))
+
+	r := sibling(t, m).applyOptions(Options{})
+	if r.mode != modeEdit || r.editID != task.ID || r.input.Value() != task.Description+"!" {
+		t.Fatalf("mode = %v, editing %s, text = %q", r.mode, r.editID, r.input.Value())
+	}
+}
+
+func TestLaunchSkipsLiveDraft(t *testing.T) {
+	m := newResumeModel(t)
+	settle(press(t, m, runeKey('c'), runeKey('x')))
+	if r := sibling(t, m).applyOptions(Options{}); r.mode != modeList {
+		t.Errorf("claimed a running instance's draft: mode %v", r.mode)
 	}
 }
 
 func TestApplyOptionsDropsStaleValues(t *testing.T) {
 	m := newResumeModel(t)
 	cursor := m.cursor
-	m = m.applyOptions(Options{
-		Cursor: "01AAAAAAAAAAAAAAAAAAAAAAAA",
-		Draft:  filepath.Join(t.TempDir(), "missing.json"),
-	})
+	m = m.applyOptions(readStateOptions(Options{Cursor: "01AAAAAAAAAAAAAAAAAAAAAAAA", State: "/nonexistent/x.json"}))
 	if m.cursor != cursor || m.mode != modeList {
 		t.Errorf("cursor = %d, mode = %v; want %d, modeList", m.cursor, m.mode, cursor)
 	}
-
-	path := resume.NewPath(t.TempDir())
-	if err := resume.Save(path, resume.Draft{Kind: resume.KindEdit, Text: "x", TaskID: "01AAAAAAAAAAAAAAAAAAAAAAAA"}); err != nil {
-		t.Fatal(err)
-	}
-	if m = m.applyOptions(Options{Draft: path}); m.mode != modeList {
-		t.Errorf("edit draft for a vanished task opened mode %v", m.mode)
-	}
 }
 
-func TestApplyOptionsRestoresView(t *testing.T) {
+func TestRestoredCursorLeavesNewestUnread(t *testing.T) {
 	m := newResumeModel(t)
-	target := m.tasks[0]
-	m = m.applyOptions(Options{Global: true, Sort: "created", Query: "task", Cursor: target.ID})
-	if !m.globalView || m.sortKey != sortByCreated || m.searchQuery != "task" {
-		t.Fatalf("global = %v, sort = %v, query = %q", m.globalView, m.sortKey, m.searchQuery)
+	newest, older := m.tasks[m.cursor].ID, m.tasks[0].ID
+	m = m.applyOptions(Options{Cursor: older})
+	if m.readIDs[newest] {
+		t.Error("newest task marked read though the cursor never reached it")
 	}
-	if m.tasks[m.cursor].ID != target.ID {
-		t.Errorf("cursor on %s, want %s", m.tasks[m.cursor].ID, target.ID)
+	if !m.readIDs[older] {
+		t.Error("restored cursor task not marked read")
 	}
 }
 
-// writeOrphan leaves a draft owned by a process that has exited, as a killed
-// dfc would.
-func writeOrphan(t *testing.T, m Model, d resume.Draft) string {
-	t.Helper()
-	exe, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	cmd := exec.Command(exe, "-test.run=^$")
-	if err := cmd.Run(); err != nil {
-		t.Fatal(err)
-	}
-	host, _ := os.Hostname()
-	data, err := json.Marshal(map[string]any{
-		"kind": d.Kind, "text": d.Text, "slug": d.Slug, "task_id": d.TaskID,
-		"pid": cmd.Process.Pid, "host": host,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	path := resume.NewPath(filepath.Dir(m.res.draftPath))
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	return path
-}
-
-func TestLaunchRecoversOrphanedCapture(t *testing.T) {
+func TestLaunchRecoversGlobalViewCaptureIntoOtherProject(t *testing.T) {
 	m := newResumeModel(t)
-	other := writeOrphan(t, m, resume.Draft{Kind: resume.KindCapture, Text: "for home", Slug: "home"})
-	mine := writeOrphan(t, m, resume.Draft{Kind: resume.KindCapture, Text: "long task\n\nbody", Slug: "work"})
+	m = press(t, m, runeKey('c'))
+	m.capTargetSlug = "home"
+	m.globalView = true
+	abandon(t, settle(press(t, m, runeKey('x'))))
 
-	m = m.applyOptions(Options{})
-	if m.mode != modeCapture || m.capArea.Value() != "long task\n\nbody" || m.capTargetSlug != "" {
-		t.Fatalf("mode = %v, text = %q, target = %q", m.mode, m.capArea.Value(), m.capTargetSlug)
-	}
-	if m.status == "" {
-		t.Error("no status hint for the recovered draft")
-	}
-	if _, err := os.Stat(mine); !os.IsNotExist(err) {
-		t.Error("recovered draft left at its old path")
-	}
-	if d := resume.Load(m.res.draftPath); d.Text != "long task\n\nbody" {
-		t.Errorf("recovered draft not owned by this instance: %+v", d)
-	}
-	if d := resume.Load(other); d.Text != "for home" {
-		t.Errorf("another project's draft was touched: %+v", d)
-	}
-
-	m = press(t, m, runeKey('!'))
-	if m.status != "" {
-		t.Errorf("status %q survived typing", m.status)
-	}
-}
-
-func TestLaunchRecoversOrphanedEdit(t *testing.T) {
-	m := newResumeModel(t)
-	task := m.tasks[0]
-	writeOrphan(t, m, resume.Draft{Kind: resume.KindEdit, Text: "renamed", Slug: "work", TaskID: task.ID})
-
-	m = m.applyOptions(Options{})
-	if m.mode != modeEdit || m.tasks[m.cursor].ID != task.ID || m.input.Value() != "renamed" {
-		t.Fatalf("mode = %v, task = %s, text = %q", m.mode, m.tasks[m.cursor].ID, m.input.Value())
-	}
-}
-
-func TestLaunchSkipsLiveDraft(t *testing.T) {
-	m := newResumeModel(t)
-	live := resume.NewPath(filepath.Dir(m.res.draftPath))
-	if err := resume.Save(live, resume.Draft{Kind: resume.KindCapture, Text: "still typing", Slug: "work"}); err != nil {
-		t.Fatal(err)
-	}
-	if m = m.applyOptions(Options{}); m.mode != modeList {
-		t.Errorf("claimed a draft whose owner is running: mode %v", m.mode)
+	r := sibling(t, m).applyOptions(Options{})
+	if r.mode != modeCapture || r.capTargetSlug != "home" || r.capArea.Value() != "x" || !r.globalView {
+		t.Fatalf("mode = %v, target = %q, text = %q, global = %v", r.mode, r.capTargetSlug, r.capArea.Value(), r.globalView)
 	}
 }

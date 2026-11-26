@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"time"
 
@@ -14,88 +13,112 @@ import (
 	"github.com/MaikuMori/dfc/internal/storage"
 )
 
-// Options seeds a TUI launch. A resume command reported to the terminal
-// carries these as `dfc tui` flags; every field tolerates stale values.
-// Without Draft, a launch recovers a draft left by a dfc that was killed.
+// Options seeds a TUI launch; every field tolerates stale values. State
+// names a saved state file (the resume command a terminal runs) whose view
+// replaces the other fields and whose draft reopens. Without State, a launch
+// recovers a draft left by a dfc that was killed.
 type Options struct {
 	Project string // project slug; the cwd project is used when its directory is gone
 	Global  bool
 	Query   string
 	Sort    string // "modified" or "created"
 	Cursor  string // task id to put the cursor on
-	Draft   string // draft file to reopen in the capture overlay or inline editor
+	State   string
 }
 
-// draftSaveDelay batches keystrokes into one draft write; it bounds how much
-// typing a terminal crash can lose.
-const draftSaveDelay = 300 * time.Millisecond
+// stateSaveInterval caps how often the state file is written, and so how much
+// typing a killed terminal can lose.
+const stateSaveInterval = 300 * time.Millisecond
 
 // resumeState is shared across Model copies (like readIDs).
 type resumeState struct {
-	exe string // argv[0] of the resume command
-	dir string // working directory of the resume command
-	// draftPath is this instance's draft file; "" disables draft saving.
-	draftPath string
-	pending   resume.Draft // latest draft, written after draftSaveDelay
-	saved     resume.Draft // what draftPath holds
-	gen       int          // bumped per draft change; only the newest tick saves
+	exe     string // argv[0] of the resume command
+	dir     string // working directory of the resume command
+	root    string // DFC_ROOT override to carry into the state, if any
+	inst    *resume.Instance
+	pending resume.State // latest state, written on the next tick
+	saved   resume.State // what the state file holds
+	ticking bool         // a save tick is scheduled
 }
 
-type draftSaveMsg struct{ gen int }
+type stateSaveMsg struct{}
 
-// newResumeState returns the resume state for this instance, or nil when the
-// command to bring it back can't be built.
+// newResumeState opens this instance's state file, or returns nil when it or
+// the resume command can't be set up.
 func newResumeState(cwd string) *resumeState {
 	exe, err := os.Executable()
 	if err != nil {
 		return nil
 	}
-	r := &resumeState{exe: exe, dir: cwd}
-	if root, err := storage.Root(); err == nil {
-		dir := resume.Dir(root)
-		resume.Prune(dir, resume.MaxAge)
-		r.draftPath = resume.NewPath(dir)
+	root, err := storage.Root()
+	if err != nil {
+		return nil
+	}
+	dir := resume.Dir(root)
+	resume.Prune(dir, resume.MaxAge)
+	inst, err := resume.Open(dir)
+	if err != nil {
+		return nil
+	}
+	r := &resumeState{exe: exe, dir: cwd, inst: inst}
+	if os.Getenv(storage.EnvRoot) != "" {
+		r.root, _ = filepath.Abs(root)
 	}
 	return r
 }
 
+// readStateOptions folds the view saved at opts.State into opts and applies
+// its data root, so the resumed TUI opens the same stores. It runs before
+// anything resolves the root.
+func readStateOptions(opts Options) Options {
+	if opts.State == "" {
+		return opts
+	}
+	st, ok := resume.Read(opts.State)
+	if !ok {
+		return opts
+	}
+	if st.Root != "" && os.Getenv(storage.EnvRoot) == "" {
+		_ = os.Setenv(storage.EnvRoot, st.Root)
+	}
+	v := st.View
+	opts.Project, opts.Global, opts.Query, opts.Sort, opts.Cursor = v.Project, v.Global, v.Query, v.Sort, v.Cursor
+	return opts
+}
+
 // quit ends the program as a deliberate user exit: the last frame clears the
-// resume record and the draft is dropped.
+// resume record and the state file is dropped.
 func (m Model) quit() (tea.Model, tea.Cmd) {
 	m.quitting = true
 	return m, tea.Quit
 }
 
 // programResume is the command that reopens this TUI where it stands, or nil
-// once the user has quit.
+// once the user has quit. It stays fixed for the instance's lifetime; the
+// state file carries everything that changes.
 func (m Model) programResume() *tea.ProgramResume {
 	r := m.res
 	if r == nil || m.quitting {
 		return nil
 	}
-	// `--flag=value` keeps values that start with `-` (e.g. `-#tag`) from
-	// parsing as flags.
-	args := []string{r.exe, "tui", "--project=" + m.slug}
-	if m.globalView {
-		args = append(args, "--global")
-	}
-	if m.searchQuery != "" {
-		args = append(args, "--query="+m.searchQuery)
-	}
+	return &tea.ProgramResume{Args: []string{r.exe, "_tui", "--state", r.inst.Path()}, Dir: r.dir}
+}
+
+// currentState is what the state file should hold right now.
+func (m Model) currentState() resume.State {
+	v := resume.View{Project: m.slug, Global: m.globalView, Query: m.searchQuery}
 	if m.sortKey == sortByCreated {
-		args = append(args, "--sort=created")
+		v.Sort = sortByCreated.String()
 	}
 	if m.cursor >= 0 && m.cursor < len(m.tasks) {
-		args = append(args, "--cursor="+m.tasks[m.cursor].ID)
+		v.Cursor = m.tasks[m.cursor].ID
 	}
-	if r.draftPath != "" && !r.pending.IsZero() {
-		args = append(args, "--draft="+r.draftPath)
-	}
-	return &tea.ProgramResume{Args: args, Dir: r.dir}
+	return resume.State{Root: m.res.root, View: v, Draft: m.currentDraft()}
 }
 
 // currentDraft returns the unsubmitted input on screen, if any. An inline
-// edit counts only once its text differs from the task's description.
+// edit counts once its text differs from the description of the task it
+// opened on.
 func (m Model) currentDraft() resume.Draft {
 	switch m.mode {
 	case modeCapture:
@@ -107,58 +130,89 @@ func (m Model) currentDraft() resume.Draft {
 			return resume.Draft{Kind: resume.KindCapture, Text: v, Slug: slug}
 		}
 	case modeEdit:
-		if m.cursor >= 0 && m.cursor < len(m.tasks) {
-			t := m.tasks[m.cursor]
-			if v := m.input.Value(); v != t.Description {
-				return resume.Draft{Kind: resume.KindEdit, Text: v, Slug: t.ProjectSlug, TaskID: t.ID}
-			}
+		if m.editID == "" {
+			return resume.Draft{}
 		}
+		v := m.input.Value()
+		if i := indexByIDSlug(m.tasks, m.editID, m.editSlug, true); i >= 0 && m.tasks[i].Description == v {
+			return resume.Draft{}
+		}
+		return resume.Draft{Kind: resume.KindEdit, Text: v, Slug: m.editSlug, TaskID: m.editID}
 	}
 	return resume.Draft{}
 }
 
-// trackDraft schedules a draft save when the on-screen draft changed.
-func (m Model) trackDraft(cmd tea.Cmd) tea.Cmd {
-	r := m.res
-	if r == nil || r.draftPath == "" {
-		return cmd
-	}
-	d := m.currentDraft()
-	if d == r.pending {
-		return cmd
-	}
-	r.pending = d
-	r.gen++
-	gen := r.gen
-	return tea.Batch(cmd, tea.Tick(draftSaveDelay, func(time.Time) tea.Msg { return draftSaveMsg{gen: gen} }))
+// saveTick schedules the next state write.
+func saveTick() tea.Cmd {
+	return tea.Tick(stateSaveInterval, func(time.Time) tea.Msg { return stateSaveMsg{} })
 }
 
-// flushDraft writes the pending draft if it hasn't been written yet.
-func (m Model) flushDraft() error {
+// trackState notes a change to the state. Writes are throttled to one per
+// stateSaveInterval, except that a draft going away is written at once, so a
+// submitted capture can't come back as unsent.
+func (m Model) trackState(cmd tea.Cmd) (Model, tea.Cmd) {
 	r := m.res
-	if r == nil || r.draftPath == "" || r.pending == r.saved {
+	if r == nil {
+		return m, cmd
+	}
+	st := m.currentState()
+	if st == r.pending {
+		return m, cmd
+	}
+	draftGone := !r.pending.Draft.IsZero() && st.Draft.IsZero()
+	r.pending = st
+	if draftGone {
+		if err := m.flushState(); err != nil {
+			m.err = err
+		}
+		return m, cmd
+	}
+	if !r.ticking {
+		r.ticking = true
+		cmd = tea.Batch(cmd, saveTick())
+	}
+	return m, cmd
+}
+
+// flushState writes the pending state if it hasn't been written yet.
+func (m Model) flushState() error {
+	r := m.res
+	if r == nil || r.pending == r.saved {
 		return nil
 	}
-	if err := resume.Save(r.draftPath, r.pending); err != nil {
+	if err := r.inst.Save(r.pending); err != nil {
 		return fmt.Errorf("could not save draft: %w", err)
 	}
 	r.saved = r.pending
 	return nil
 }
 
-// finishDraft settles the draft file as the program exits: removed on a
-// deliberate quit, kept current otherwise so a resume can reopen it.
-func (m Model) finishDraft() error {
-	if m.quitting && m.res != nil {
-		m.res.pending = resume.Draft{}
+// finishState settles the state file as the program exits: removed on a
+// deliberate quit, written out otherwise so a resume or the next launch can
+// pick it up.
+func (m Model) finishState() error {
+	r := m.res
+	if r == nil {
+		return nil
 	}
-	return m.flushDraft()
+	if m.quitting {
+		return r.inst.Close(true)
+	}
+	r.pending = m.currentState()
+	err := m.flushState()
+	_ = r.inst.Close(false)
+	return err
 }
 
 // applyOptions restores the view described by opts onto a freshly built
-// model. Values that no longer apply (a project that left the registry, a
-// query that won't parse, a vanished task) are dropped.
+// model, then reopens a draft: the one in opts.State, or on a fresh launch
+// one abandoned by a killed dfc. Values that no longer apply (a project that
+// left the registry, a query that won't parse, a vanished task) are dropped.
 func (m Model) applyOptions(opts Options) Model {
+	initialRead := ""
+	if m.cursor >= 0 && m.cursor < len(m.tasks) {
+		initialRead = m.tasks[m.cursor].ID
+	}
 	if opts.Sort == sortByCreated.String() {
 		m.sortKey = sortByCreated
 		m.tasks = sortDoneFirst(m.tasks, m.sortKey)
@@ -186,39 +240,52 @@ func (m Model) applyOptions(opts Options) Model {
 	if opts.Cursor != "" {
 		m.moveCursorTo(opts.Cursor)
 	}
-	if r := m.res; r != nil && r.draftPath != "" {
-		if opts.Draft != "" {
-			m = m.restoreDraft(resume.Claim(opts.Draft, r.draftPath))
-		} else if d := m.recoverDraft(); !d.IsZero() {
-			m = m.restoreDraft(d)
+	if r := m.res; r != nil {
+		if opts.State != "" {
+			if st, ok := r.inst.Claim(opts.State); ok {
+				m = m.restoreDraft(st)
+			}
+		} else if st, ok := m.recoverState(); ok {
+			if st.View.Global && !m.globalView && len(m.core.Registry().Slugs()) > 1 {
+				// The draft may target, or edit a task in, another project.
+				m.globalView = true
+				if err := m.refreshWatches(); err != nil {
+					m.err = err
+				}
+				m = m.reloadActive()
+			}
+			m = m.restoreDraft(st)
 			if m.mode != modeList {
 				m.status = "recovered an unsent draft; esc discards it"
 			}
 		}
 	}
+	if m.cursor < 0 || m.cursor >= len(m.tasks) || m.tasks[m.cursor].ID != initialRead {
+		delete(m.readIDs, initialRead)
+	}
 	return m
 }
 
-// recoverDraft claims the newest draft left behind by a dfc that is no longer
-// running, if it belongs to the current project: a capture into it, or an
-// edit of a listed task.
-func (m Model) recoverDraft() resume.Draft {
-	for _, o := range resume.Orphans(filepath.Dir(m.res.draftPath)) {
-		switch d := o.Draft; d.Kind {
-		case resume.KindCapture:
-			if d.Slug != m.slug {
-				continue
-			}
-		case resume.KindEdit:
-			if !slices.ContainsFunc(m.tasks, func(t storage.Task) bool { return t.ID == d.TaskID }) {
+// recoverState claims the newest state file abandoned by a dfc that is no
+// longer running whose draft belongs here: made in the current project's TUI,
+// or aimed at the current project. An edit draft also needs its task to still
+// exist.
+func (m Model) recoverState() (resume.State, bool) {
+	for _, path := range resume.Orphans(filepath.Dir(m.res.inst.Path())) {
+		st, ok := resume.Read(path)
+		if !ok || (st.Draft.Slug != m.slug && st.View.Project != m.slug) {
+			continue
+		}
+		if d := st.Draft; d.Kind == resume.KindEdit {
+			if _, err := m.core.FindByIDInProject(d.TaskID, d.Slug); err != nil {
 				continue
 			}
 		}
-		if d := resume.Claim(o.Path, m.res.draftPath); !d.IsZero() {
-			return d
+		if st, ok := m.res.inst.Claim(path); ok {
+			return st, true
 		}
 	}
-	return resume.Draft{}
+	return resume.State{}, false
 }
 
 // moveCursorTo puts the cursor on the task with id, if listed.
@@ -233,10 +300,10 @@ func (m *Model) moveCursorTo(id string) bool {
 	return false
 }
 
-// restoreDraft reopens d, already claimed onto this instance's draft path, in
-// the overlay it came from.
-func (m Model) restoreDraft(d resume.Draft) Model {
-	switch d.Kind {
+// restoreDraft reopens the draft in st, a state file already claimed by this
+// instance, in the overlay it came from.
+func (m Model) restoreDraft(st resume.State) Model {
+	switch d := st.Draft; d.Kind {
 	case resume.KindCapture:
 		target := d.Slug
 		if target == m.slug || !storage.ProjectDirExists(target) {
@@ -249,8 +316,17 @@ func (m Model) restoreDraft(d resume.Draft) Model {
 		resizeQuickCapture(&m.capArea)
 		m.relayout()
 	case resume.KindEdit:
-		if m.moveCursorTo(d.TaskID) {
+		found := m.moveCursorTo(d.TaskID)
+		if !found && m.searchQuery != "" {
+			// The task may have stopped matching the filter while dfc was
+			// down; the edit matters more than the filter.
+			m.searchQuery = ""
+			m = m.reloadActive()
+			found = m.moveCursorTo(d.TaskID)
+		}
+		if found {
 			m.mode = modeEdit
+			m.editID, m.editSlug = d.TaskID, d.Slug
 			m.input.Reset()
 			m.input.SetValue(d.Text)
 			m.input.CursorEnd()
@@ -258,12 +334,10 @@ func (m Model) restoreDraft(d resume.Draft) Model {
 			m.relayout()
 		}
 	}
-	// The claimed file holds d; rewrite it as what reopened, or drop it when
-	// nothing could.
 	if r := m.res; r != nil {
-		r.saved = d
-		r.pending = m.currentDraft()
-		if err := m.flushDraft(); err != nil {
+		r.saved = st
+		r.pending = m.currentState()
+		if err := m.flushState(); err != nil {
 			m.err = err
 		}
 	}
